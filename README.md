@@ -1,12 +1,12 @@
 # Cherry Tree TV (indev)
 
-An open-source, web-based front-end for your HTPC that can runs as an app using Electron.
+An open-source, web-based front-end for your HTPC that runs as an app using Electron.
 
 <img src=resources/static/assets/img/readme-home-menu.png alt="Running instance of Cherry Tree">
 
 # Features
 
-### Use your phone as a remote
+### Use your phone (iPhone, Android e.t.c) as a remote
 
 <img src=resources/static/assets/img/readme-phone-link.png alt="Phone Link example">
 
@@ -14,7 +14,7 @@ An open-source, web-based front-end for your HTPC that can runs as an app using 
 
 <img src=resources/static/assets/img/readme-casting.png alt="YouTube casting example">
 
-### Listen to music in your PC
+### Listen to music from your PC
 
 <img src=resources/static/assets/img/readme-audio-player.png alt="Watch Party example">
 
@@ -22,7 +22,7 @@ An open-source, web-based front-end for your HTPC that can runs as an app using 
 
 <img src=resources/static/assets/img/readme-movies.png alt="Movies list example">
 
-### Watch videos with friends
+### Watch videos with friends with Watch Party
 
 <img src=resources/static/assets/img/readme-watch-party.png alt="Watch Party example">
 
