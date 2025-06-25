@@ -87,7 +87,7 @@ export default {
         description:
           "Want to use your phone as a TV remote?\nScan the QR code shown on screen.",
         helpText: "Phone Link Help",
-        helpInfo: `On your phone, go to this URL: %url%\n\nOnce you connect, you should see a prompt asking you to enter a code. Use the code in the top right of the screen, or find it in Settings.`,
+        helpInfo: `On your phone, go to this URL: %url%\n\nOnce you connect, you should see a prompt asking you to enter a code.\n\nUse the code in the top right of the screen, or find it in Settings.`,
       },
       account: {
         title: "Create an account with Cherries.to",

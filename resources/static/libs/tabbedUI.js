@@ -34,7 +34,7 @@ class TabbedUI {
         display: "flex",
         flexDirection: "column",
         backgroundColor: "var(--background-light)",
-        borderRadius: "5px",
+        borderRadius: "0.8rem",
         gap: "0.5rem",
         padding: "1.25rem 0",
         width: "11.25rem",
@@ -48,7 +48,7 @@ class TabbedUI {
         display: "flex",
         flexDirection: "column",
         backgroundColor: "var(--background-light)",
-        borderRadius: "5px",
+        borderRadius: "0.8rem",
       })
       .appendTo(wrapper);
 

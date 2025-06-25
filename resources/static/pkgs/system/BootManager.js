@@ -81,14 +81,28 @@ const pkg = {
     async function doEverythingElse() {
       async function runOobe() {
         await Root.Core.pkg.run(
-          "system:Oobe",
+          "ui:Onboarding",
           [
-            async function oobeCallback() {
-              await Root.Core.pkg.run("ui:MainMenu", [], true);
+            {
+              redirectTo: "system:Oobe",
+              launchArguments: [
+                async function oobeCallback() {
+                  await Root.Core.pkg.run("ui:MainMenu", [], true);
+                },
+              ],
             },
           ],
           true,
         );
+        // await Root.Core.pkg.run(
+        //   "system:Oobe",
+        //   [
+        //     async function oobeCallback() {
+        //       await Root.Core.pkg.run("ui:MainMenu", [], true);
+        //     },
+        //   ],
+        //   true,
+        // );
       }
 
       let Users = Root.Processes.getService("UserSvc").data;
@@ -137,7 +151,11 @@ const pkg = {
             langManager.getString("system.offline.title"),
             langManager.getString("system.offline.description"),
           );
-          await Root.Core.pkg.run("ui:Onboarding", [], true);
+          await Root.Core.pkg.run(
+            "ui:Onboarding",
+            [{ redirectTo: "ui:MainMenu", launchArguments: [] }],
+            true,
+          );
         } else {
           runOobe();
         }

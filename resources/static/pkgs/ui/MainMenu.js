@@ -239,13 +239,13 @@ const pkg = {
             setTimeout(() => {
               coverVisible = true;
               cover.styleJs({ opacity: "1" });
-            }, 100);
+            }, 200);
           });
         } else {
           setTimeout(() => {
             coverVisible = false;
             cover.styleJs({ opacity: "0" });
-          }, 100);
+          }, 200);
         }
       }
       gameTitle.text(game.preview.title ? game.preview.title : game.name);

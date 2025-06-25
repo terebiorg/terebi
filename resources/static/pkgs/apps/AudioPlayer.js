@@ -237,7 +237,7 @@ const pkg = {
         alignItems: "center",
         justifyContent: "center",
         padding: "1rem",
-        borderRadius: "5px",
+        borderRadius: "1rem",
         background: "rgba(0,0,0,0.5)",
       })
       .appendTo(container);

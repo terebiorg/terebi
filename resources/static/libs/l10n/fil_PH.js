@@ -89,7 +89,7 @@ export default {
         description:
           "Gusto mo bang gawing remote ang phone mo?\nI-scan ang QR code na nakapaskil sa screen.",
         helpText: "Kailangan ng tulong?",
-        helpInfo: `Sa phone mo, i-type ang URL: %url%\n\nKung ikaw ay nakaconnect na, dapay mo'y makita ang isang prompt na naghahanap sa code ng TV mo. Makikita ang code na ito sa kanang itaas ng screen at sa Settings app.`,
+        helpInfo: `Sa inyong telepono, i-type ang URL sa isang web browser: %url%\n\nKapag ikaw ay nakapasok na, may makikita kang isang prompt na naghahanap sa code ng inyong TV.\n\n Makikita ang code na ito sa kanang itaas ng screen at sa Settings app.`,
       },
       account: {
         title: "Gumawa ng Cherries.to account",

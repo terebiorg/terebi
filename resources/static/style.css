@@ -314,20 +314,37 @@ ul {
     opacity: 1;
   }
 }
+@keyframes float {
+  0% {
+    transform: translatey(0px);
+  }
+  50% {
+    transform: translatey(-10px);
+  }
+  100% {
+    transform: translatey(0px);
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
+    transform: scale(0.95);
   }
   to {
     opacity: 1;
+    transform: scale(1);
   }
 }
+
 @keyframes fadeOut {
   from {
     opacity: 1;
+    transform: scale(1);
   }
   to {
     opacity: 0;
+    transform: scale(1.2);
   }
 }
 
@@ -502,7 +519,7 @@ button,
   padding: 1rem 0.75rem;
   font: inherit;
   background-color: var(--background-light);
-  border-radius: 0.32rem;
+  border-radius: 0.5rem;
   font-weight: 550;
   color: var(--text-default);
   cursor: var(--cursor-pointer), auto;
@@ -578,7 +595,7 @@ input[type="range"] {
   flex-direction: column;
   gap: 1.5rem;
   padding: 2rem;
-  border-radius: 0.32rem;
+  border-radius: 0.8rem;
   background-color: var(--background-default);
   border: 0.1rem solid var(--background-lighter);
   box-shadow: 0 0 0.5rem 0 var(--current-player);
@@ -656,7 +673,7 @@ input[type="range"] {
 .game-list .game {
   width: 18rem;
   height: 12rem;
-  border-radius: 0.32rem;
+  border-radius: 1rem;
   border: 0.125rem solid transparent;
   flex-shrink: 0;
   position: relative;
@@ -820,7 +837,7 @@ input[type="range"] {
 .notify-box > .notify {
   background-color: var(--background-lighter);
   border: 0.125rem solid var(--current-player);
-  border-radius: 0.32rem;
+  border-radius: 0.5rem;
   padding: 0.75rem 0.8rem;
   min-width: 18rem;
   display: flex;
