@@ -7,6 +7,7 @@ let wrapper,
   Pid,
   Sfx,
   bg,
+  gradientOverlay,
   volumeUpdate,
   customPlayerInput,
   playerInput,
@@ -16,7 +17,8 @@ let wrapper,
   colorThief,
   splitStr,
   base64URL,
-  controller;
+  controller,
+  styleSheet;
 
 const pkg = {
   name: "Audio Player",
@@ -40,6 +42,9 @@ const pkg = {
 
     Sfx = Root.Processes.getService("SfxLib").data;
     const audio = Sfx.getAudio();
+    let parsedLyrics = null,
+      lyricLines = [],
+      currentLyricIndex = -1;
 
     function stopBgm() {
       audio.pause();
@@ -75,6 +80,25 @@ const pkg = {
       });
     }
 
+    function getLyrics(title, artist) {
+      return new Promise(async (resolve, reject) => {
+        let urlObj = new URL("https://lrclib.net/api/search");
+        urlObj.searchParams.append("track_name", title);
+        urlObj.searchParams.append("artist_name", artist);
+        let result = await fetch(urlObj.href).then((t) => t.json());
+        console.log(urlObj.href);
+        console.log(result);
+        if (typeof result != "object") {
+          reject("Invalid data received");
+        }
+        if (result.length == 0) {
+          reject("Lyrics not found");
+        }
+        console.log(result[0]);
+        resolve(result[0]);
+      });
+    }
+
     console.log(launchArgs);
     let tag = {
       tags: {},
@@ -96,38 +120,70 @@ const pkg = {
         width: "100%",
         height: "100%",
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: "20px",
+        padding: "2rem",
+        boxSizing: "border-box",
       })
       .appendTo(wrapper);
 
-    let songDisplay = new Html("div")
+    let contentArea = new Html("div")
+      .class("content-area")
       .styleJs({
         display: "flex",
-        gap: "20px",
         alignItems: "center",
         justifyContent: "center",
+        width: "90%",
+        maxWidth: "1400px",
       })
       .appendTo(container);
+
+    let leftPane = new Html("div")
+      .styleJs({
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        gap: "20px",
+        flexShrink: 0,
+        width: "20rem",
+      })
+      .appendTo(contentArea);
 
     let albumCover = new Html("img")
       .attr({
         src: "assets/img/maxresdefault.png",
       })
       .styleJs({
-        width: "15rem",
-        height: "15rem",
+        width: "20rem",
+        height: "20rem",
         aspectRatio: "1 / 1",
         objectFit: "cover",
         borderRadius: "8px",
       })
-      .appendTo(songDisplay);
+      .appendTo(leftPane);
+
+    let songInfo = new Html("div")
+      .styleJs({
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        gap: "5px",
+        textAlign: "left",
+      })
+      .appendTo(leftPane);
+
+    let songTitle = new Html("h1")
+      .text("Unknown song")
+      .styleJs({ margin: 0, fontSize: "1.5rem" })
+      .appendTo(songInfo);
+    let songArtist = new Html("p")
+      .text("Unknown artist")
+      .styleJs({ margin: 0, fontSize: "1rem", opacity: 0.8 })
+      .appendTo(songInfo);
 
     bg = new Html("img")
       .styleJs({
-        zIndex: -1,
+        zIndex: -3,
         filter: "blur(100px) brightness(35%)",
         position: "absolute",
         top: "0",
@@ -144,7 +200,7 @@ const pkg = {
     visualizer = new Html("div")
       .attr({ width: window.innerWidth, height: window.innerHeight / 2 })
       .styleJs({
-        zIndex: -1,
+        zIndex: -2,
         position: "absolute",
         bottom: "0",
         left: "0",
@@ -153,12 +209,38 @@ const pkg = {
       })
       .appendTo("body");
 
-    let songInfo = new Html("div")
-      .styleJs({ display: "flex", flexDirection: "column", gap: "10px" })
-      .appendTo(songDisplay);
+    gradientOverlay = new Html("div")
+      .styleJs({
+        zIndex: -1,
+        position: "absolute",
+        bottom: "0",
+        left: "0",
+        width: "100%",
+        height: "100%",
+        background:
+          "linear-gradient(to top, rgba(0, 0, 0, 0.7) 20%, rgba(0, 0, 0, 0) 60%)",
+        pointerEvents: "none",
+      })
+      .appendTo("body");
 
-    let songTitle = new Html("h1").text("Unknown song").appendTo(songInfo);
-    let songArtist = new Html("p").text("Unknown artist").appendTo(songInfo);
+    let lyricsContainer = new Html("div")
+      .class("lyrics-container")
+      .styleJs({
+        height: "25rem",
+        overflow: "hidden",
+        position: "relative",
+      })
+      .appendTo(contentArea);
+
+    let lyricsScroller = new Html("div")
+      .styleJs({
+        position: "absolute",
+        width: "100%",
+        top: "0",
+        left: "0",
+        transition: "transform 0.4s ease-in-out",
+      })
+      .appendTo(lyricsContainer);
 
     function blobToBase64(blob) {
       return new Promise((resolve, _) => {
@@ -230,7 +312,12 @@ const pkg = {
 
     let playerControls = new Html("div")
       .styleJs({
-        width: "50%",
+        position: "absolute",
+        bottom: "3rem",
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "60%",
+        maxWidth: "800px",
         display: "flex",
         flexDirection: "column",
         gap: "15px",
@@ -240,7 +327,7 @@ const pkg = {
         borderRadius: "1rem",
         background: "rgba(0,0,0,0.5)",
       })
-      .appendTo(container);
+      .appendTo(wrapper);
 
     let progressInd = new Html("div")
       .styleJs({
@@ -316,8 +403,47 @@ const pkg = {
           },
         }),
       );
-      // Will be added for synced lyrics
-      // renderer.currentTime = musicAudio.elm.currentTime;
+      // Synced lyrics
+      if (parsedLyrics && parsedLyrics.length > 0) {
+        const currentTime = musicAudio.currentTime;
+        let newIndex = -1;
+
+        for (let i = parsedLyrics.length - 1; i >= 0; i--) {
+          if (currentTime >= parsedLyrics[i].time) {
+            newIndex = i;
+            break;
+          }
+        }
+
+        if (newIndex !== currentLyricIndex) {
+          currentLyricIndex = newIndex;
+
+          lyricLines.forEach((line, i) => {
+            line.elm.classList.remove("active", "past");
+            if (i < newIndex) {
+              line.elm.classList.add("past");
+            } else if (i === newIndex) {
+              line.elm.classList.add("active");
+            }
+          });
+
+          if (newIndex > -1) {
+            const activeEl = lyricLines[newIndex].elm;
+            const scrollerTopPadding = lyricsContainer.elm.clientHeight / 2;
+            const scrollOffset =
+              scrollerTopPadding -
+              activeEl.offsetTop -
+              activeEl.clientHeight / 2;
+            lyricsScroller.styleJs({
+              transform: `translateY(${scrollOffset}px)`,
+            });
+          } else {
+            lyricsScroller.styleJs({
+              transform: "translateY(0px)",
+            });
+          }
+        }
+      }
     });
 
     musicAudio.volume = Sfx.getVolume();
@@ -353,6 +479,112 @@ const pkg = {
       }
       musicAudio.currentTime = newTime;
     }).appendTo(controlButtons);
+
+    function parseLRC(lrcText) {
+      if (!lrcText) return [];
+      const lines = lrcText.split("\n");
+      const lyrics = [];
+      const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+      for (const line of lines) {
+        const match = line.match(timeRegex);
+        if (match) {
+          const minutes = parseInt(match[1], 10);
+          const seconds = parseInt(match[2], 10);
+          const milliseconds = parseInt(match[3].padEnd(3, "0"), 10);
+          const time = minutes * 60 + seconds + milliseconds / 1000;
+          const text = line.replace(timeRegex, "").trim();
+          if (text) {
+            lyrics.push({ time, text });
+          }
+        }
+      }
+      return lyrics;
+    }
+
+    function toggleLyricsDisplay() {
+      contentArea.elm.classList.toggle("lyrics-active");
+    }
+
+    getLyrics(tag.tags.title, tag.tags.artist)
+      .then((lyricInfo) => {
+        if (lyricInfo && lyricInfo.syncedLyrics) {
+          parsedLyrics = parseLRC(lyricInfo.syncedLyrics);
+          lyricsScroller.html("");
+          lyricLines = [];
+          if (parsedLyrics.length > 0) {
+            contentArea.elm.classList.add("lyrics-active");
+
+            createButton(icons["sing"], toggleLyricsDisplay).appendTo(
+              controlButtons,
+            );
+            Ui.update(Pid, [controlButtons.elm.children]);
+
+            const topPadding = lyricsContainer.elm.clientHeight / 2;
+            lyricsScroller.styleJs({
+              paddingTop: `${topPadding}px`,
+              paddingBottom: `${topPadding}px`,
+            });
+            parsedLyrics.forEach((line) => {
+              const p = new Html("p")
+                .text(line.text)
+                .styleJs({
+                  margin: "0 0 1.5rem 0",
+                  lineHeight: "1.2",
+                  transition:
+                    "transform 0.3s ease, color 0.3s ease, font-size 0.3s ease, opacity 0.3s ease, filter 0.3s ease",
+                  fontSize: "2.5rem",
+                  fontWeight: "500",
+                  color: "rgba(255, 255, 255, 0.7)",
+                })
+                .appendTo(lyricsScroller);
+
+              p.elm.classList.add("lyric-line");
+              lyricLines.push(p);
+            });
+          }
+        }
+      })
+      .catch((errorMessage) => {
+        console.error(errorMessage);
+        lyricsScroller.html(""); // Clear lyrics on error
+      });
+
+    styleSheet = document.createElement("style");
+    styleSheet.innerText = `
+        .content-area {
+            gap: 0;
+            justify-content: center;
+            transition: gap 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .content-area.lyrics-active {
+            gap: 60px;
+        }
+
+        .lyrics-container {
+            width: 0;
+            opacity: 0;
+            flex-shrink: 0;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), 
+                        opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .content-area.lyrics-active .lyrics-container {
+            width: 45rem;
+            opacity: 1;
+        }
+
+        .lyric-line.active {
+            color: #FFFFFF !important;
+            font-size: 3.5rem !important;
+            font-weight: bold !important;
+        }
+        .lyric-line.past {
+            color: rgba(255, 255, 255, 0.5) !important;
+            font-size: 2.5rem !important;
+            filter: blur(2px);
+        }
+    `;
+    document.head.appendChild(styleSheet);
 
     musicAudio.addEventListener("play", () => {
       playButton.html(icons["pause"]);
@@ -564,9 +796,14 @@ const pkg = {
     });
   },
   end: async function () {
+    if (styleSheet) {
+      styleSheet.remove();
+      styleSheet = null;
+    }
     controller.destroy();
     audioMotion.destroy();
     visualizer.cleanup();
+    gradientOverlay.cleanup();
     musicAudio.pause();
     musicAudio = null;
     document.removeEventListener("CherryTree.Ui.VolumeChange", volumeUpdate);
