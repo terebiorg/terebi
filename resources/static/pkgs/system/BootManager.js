@@ -130,7 +130,11 @@ const pkg = {
             "CHERRY_TREE_WS",
             await userSvc.subscribe(t),
           );
-          await Root.Core.pkg.run("ui:Onboarding", [], true);
+          await Root.Core.pkg.run(
+            "ui:Onboarding",
+            [{ redirectTo: "ui:MainMenu", launchArguments: [] }],
+            true,
+          );
         } else if (result === false) {
           window.isOffline = true;
           // await Root.Libs.Modal.Show({
