@@ -69,6 +69,7 @@ const pkg = {
     await Root.Core.pkg.run("services:SfxLib", [], true);
     await Root.Core.pkg.run("services:UiLib", [], true);
     await Root.Core.pkg.run("services:Users", [], true);
+    await Root.Core.pkg.run("services:Parties", [], true);
 
     // Users is loaded
     let userSvc = Root.Processes.getService("UserSvc").data;

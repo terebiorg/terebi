@@ -92,6 +92,19 @@ let templateFsLayout = {
                   "Watch YouTube videos directly or by casting through your phone.",
               },
             },
+            {
+              id: "partiesDemo",
+              name: "Parties Demo",
+              color: "hsl(280, 65%, 62%)",
+              lastPlayed: Date.now() - 1_000,
+              image:
+                "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1oYW1tZXIiPjxwYXRoIGQ9Im0xNSAxMi04LjM3MyA4LjM3M2ExIDEgMCAxIDEtMy0zTDEyIDkiLz48cGF0aCBkPSJtMTggMTUgNC00Ii8+PHBhdGggZD0ibTIxLjUgMTEuNS0xLjkxNC0xLjkxNEEyIDIgMCAwIDEgMTkgOC4xNzJWN2wtMi4yNi0yLjI2YTYgNiAwIDAgMC00LjIwMi0xLjc1Nkw5IDIuOTZsLjkyLjgyQTYuMTggNi4xOCAwIDAgMSAxMiA4LjRWMTBsMiAyaDEuMTcyYTIgMiAwIDAgMSAxLjQxNC41ODZMMTguNSAxNC41Ii8+PC9zdmc+",
+              launchPkg: "demos:partiesDemo",
+              preview: {
+                title: "Parties Demo",
+                description: "For Cherry Tree developers & tinkerers only.",
+              },
+            },
           ],
         }),
       },
