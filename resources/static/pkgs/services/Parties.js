@@ -7,7 +7,7 @@ let Ui;
 let Users;
 let Sfx;
 
-const activeParties = new Map();
+let activeParty = null;
 let activeGame = {
   gameName: "Terebi Game",
   activeParty: null,
@@ -527,12 +527,8 @@ const pkg = {
       });
     },
     unregisterGame() {
-      for (const [hostCode, party] of activeParties.entries()) {
-        if (party && party.peer && !party.peer.destroyed) {
-          party.peer.destroy();
-        }
-        activeParties.delete(hostCode);
-        console.log(`[PARTIES] Ended party: ${hostCode}`);
+      if (activeParty) {
+        endPartyInternal(activeParty.partyName, activeParty.hostCode);
       }
       activeGame = {
         gameName: "Terebi Game",
@@ -549,6 +545,10 @@ const pkg = {
       return new Promise((resolve, reject) => {
         if (!activeGame.registered) {
           reject(new Error("The game must be registered!"));
+        }
+        // Only allow one party at a time
+        if (activeParty) {
+          reject(new Error("A party is already active!"));
         }
         const hostCode = generateHostCode();
         const negotiatorPeer = new Peer(hostCode, {
@@ -570,25 +570,17 @@ const pkg = {
             );
           }
 
-          const party = {
+          activeParty = {
             partyName,
             hostCode,
             peer: negotiatorPeer,
             peers: [],
+            _ended: false,
           };
-
-          activeParties.set(hostCode, party);
           activeGame.activeParty = {
             partyName,
             hostCode,
-            endParty: () => {
-              const p = activeParties.get(hostCode);
-              if (p && p.peer && !p.peer.destroyed) {
-                p.peer.destroy();
-              }
-              activeParties.delete(hostCode);
-              console.log(`[PARTIES] Ended party: ${hostCode}`);
-            },
+            endParty: () => endPartyInternal(partyName, hostCode),
           };
           console.log("[PARTIES] Party created successfully:", {
             partyName,
@@ -605,19 +597,7 @@ const pkg = {
           resolve({
             partyName,
             hostCode,
-            endParty: () => {
-              const p = activeParties.get(hostCode);
-              if (p && p.peer && !p.peer.destroyed) {
-                p.peer.destroy();
-              }
-              activeParties.delete(hostCode);
-              activeGame.activeParty = null;
-              root.Libs.Notify.show(
-                "Party ended",
-                `${party.partyName} has ended.`,
-              );
-              console.log(`[PARTIES] Ended party: ${hostCode}`);
-            },
+            endParty: () => endPartyInternal(partyName, hostCode),
           });
         });
 
@@ -632,42 +612,53 @@ const pkg = {
       });
     },
     endParty(hostCode) {
-      const party = activeParties.get(hostCode);
-      if (party && party.peer && !party.peer.destroyed) {
-        party.peer.destroy();
+      if (activeParty && activeParty.hostCode === hostCode) {
+        endPartyInternal(activeParty.partyName, hostCode);
       }
-      activeParties.delete(hostCode);
-      activeGame.activeParty = null;
-      root.Libs.Notify.show("Party ended", `${party.partyName} has ended.`);
-      console.log(`[PARTIES] Ended party: ${hostCode}`);
     },
     getPartyInfo(hostCode) {
-      const party = activeParties.get(hostCode);
-      if (party) {
+      if (activeParty && activeParty.hostCode === hostCode) {
         return {
-          partyName: party.partyName,
-          hostCode: party.hostCode,
+          partyName: activeParty.partyName,
+          hostCode: activeParty.hostCode,
         };
       }
       return undefined;
     },
 
     getParty(hostCode) {
-      return activeParties.get(hostCode);
+      if (activeParty && activeParty.hostCode === hostCode) {
+        return activeParty;
+      }
+      return undefined;
     },
   },
 
   end: async function () {
-    console.log("[PARTIES] Shutting down all party connections.");
-    for (const [hostCode, party] of activeParties.entries()) {
-      if (party.peer && !party.peer.destroyed) {
-        party.peer.destroy();
-        console.log(`[PARTIES] Destroyed party: ${hostCode}`);
-      }
+    console.log("[PARTIES] Shutting down party connection.");
+    if (activeParty) {
+      endPartyInternal(activeParty.partyName, activeParty.hostCode);
     }
-    activeParties.clear();
     console.log("[PARTIES] Shutdown complete.");
   },
 };
 
 export default pkg;
+
+function endPartyInternal(partyName, hostCode) {
+  if (activeParty && !activeParty._ended) {
+    activeParty._ended = true;
+    if (activeParty.peer && !activeParty.peer.destroyed) {
+      activeParty.peer.destroy();
+    }
+    showSocialHubToast({
+      icon: icons.users,
+      title: "Party ended",
+      subtitle: `<strong>${partyName}</strong> has ended.`,
+      hint: "",
+    });
+    console.log(`[PARTIES] Ended party: ${hostCode}`);
+    activeParty = null;
+    activeGame.activeParty = null;
+  }
+}
