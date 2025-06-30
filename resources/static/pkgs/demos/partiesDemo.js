@@ -31,8 +31,6 @@ const pkg = {
       name: "Parties Demo",
       pid: Pid,
     });
-    // curParty = await Parties.createParty("diddy party");
-    // console.log(curParty);
 
     new Html("h1").text("Parties Demo").appendTo(wrapper);
     new Html("p")
@@ -49,6 +47,15 @@ const pkg = {
         new Html("button").text("say hi").on("click", (e) => {
           alert("hallo every nyan");
         }),
+        new Html("button").text("create diddy party").on("click", async (e) => {
+          curParty = await Parties.createParty("diddy party");
+          console.log(curParty);
+        }),
+        new Html("button")
+          .text("arrest diddy (end party)")
+          .on("click", async (e) => {
+            curParty.endParty();
+          }),
       )
       .appendTo(wrapper);
 
@@ -60,7 +67,7 @@ const pkg = {
   },
   end: async function () {
     // Exit this UI when the process is exited
-    // curParty.endParty();
+    curParty.endParty();
     Parties.unregisterGame();
     Ui.cleanup(Pid);
     Sfx.playSfx("deck_ui_out_of_game_detail.wav");

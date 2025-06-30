@@ -1,4 +1,5 @@
 import { Peer } from "https://esm.sh/peerjs@1.5.4?bundle-deps";
+import icons from "../../libs/icons.js";
 import Html from "/libs/html.js";
 
 let root;
@@ -20,21 +21,106 @@ const overlayState = {
   originalUi: null,
 };
 
-const createPanel = (container, { width = "26%", height = "95%" } = {}) => {
+const showSocialHubToast = (toastData) => {
+  const toast = new Html("div").appendTo("body").styleJs({
+    position: "fixed",
+    bottom: "5%",
+    left: "50%",
+    zIndex: 2147483647,
+    borderRadius: "1rem",
+    overflow: "hidden",
+    boxShadow:
+      "0 0 1rem 0 var(--current-player), 0 0.4rem 1.2rem 0 rgba(0,0,0,0.3)",
+    width: "480px",
+    transform: "translateX(-50%) translateY(150%)",
+    transition: "transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)",
+    color: "white",
+    backdropFilter: "blur(10px)",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+  });
+
+  const topSection = new Html("div").appendTo(toast).styleJs({
+    display: "flex",
+    alignItems: "center",
+    gap: "1.25rem",
+    padding: "1.25rem",
+    backgroundColor: "var(--background-light)",
+  });
+
+  const iconContainer = new Html("div").appendTo(topSection).styleJs({
+    width: "56px",
+    height: "56px",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "0.375rem",
+  });
+
+  new Html("div").html(toastData.icon).appendTo(iconContainer).styleJs({
+    width: "32px",
+    height: "32px",
+    margin: 0,
+    padding: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  });
+
+  const textContainer = new Html("div").appendTo(topSection);
+
+  new Html("h3").text(toastData.title).appendTo(textContainer).styleJs({
+    margin: 0,
+    fontSize: "1.1rem",
+    fontWeight: "600",
+    textShadow: "0 1px 2px rgba(0,0,0,0.2)",
+  });
+
+  new Html("p").html(toastData.subtitle).appendTo(textContainer).styleJs({
+    margin: 0,
+    fontSize: "1rem",
+    opacity: 0.9,
+  });
+
+  const bottomSection = new Html("div").appendTo(toast).styleJs({
+    padding: "0.8rem 1.25rem",
+    backgroundColor: "rgba(0,0,0,0.4)",
+  });
+
+  new Html("span").html(toastData.hint).appendTo(bottomSection).styleJs({
+    fontSize: "0.9rem",
+  });
+
+  setTimeout(() => {
+    toast.styleJs({ transform: "translateX(-50%) translateY(0)" });
+  }, 100);
+
+  setTimeout(() => {
+    toast.styleJs({ transform: "translateX(-50%) translateY(150%)" });
+  }, 5000);
+
+  setTimeout(() => {
+    toast.cleanup();
+  }, 5600);
+};
+
+const createPanel = (container, { width = "28%", height = "95%" } = {}) => {
   const panel = new Html("div").appendTo(container).styleJs({
-    backgroundColor: "var(--background-default)",
+    backgroundColor: "var(--background-darker)",
     border: "0.1rem solid var(--background-lighter)",
-    boxShadow: "0 0 0.5rem 0 var(--current-player)",
+    boxShadow:
+      "0 0 1rem 0 var(--current-player), 0 0.4rem 1.2rem 0 rgba(0,0,0,0.3)",
     borderRadius: "0.8rem",
-    backdropFilter: "blur(0.5rem) brightness(0.5) contrast(1.05)",
+    backdropFilter: "blur(0.5rem) brightness(0.7)",
     width,
     height,
     padding: "2rem",
     display: "flex",
     flexDirection: "column",
-    overflow: "scroll",
+    overflowY: "auto",
+    overflowX: "hidden",
     scrollBehavior: "smooth",
-    gap: "10px",
+    gap: "1rem",
   });
 
   Ui.transition("popIn", panel);
@@ -68,7 +154,10 @@ const closePanel = (panelToClose) => {
 };
 
 const showProfilePanel = (friend) => {
-  const panel = createPanel(overlayState.container, { height: "auto" });
+  const panel = createPanel(overlayState.container, {
+    width: "28%",
+    height: "auto",
+  });
 
   const statusText =
     friend.status === 1
@@ -77,42 +166,51 @@ const showProfilePanel = (friend) => {
           friend.lastOnline,
         ).toLocaleDateString()}`;
 
-  const statusColor = friend.status === 1 ? "#4CAF50" : "#6c757d";
+  const statusColor = friend.status === 1 ? "var(--accent-color)" : "#6c757d";
 
   const headingContainer = new Html("div")
     .appendTo(panel)
-    .styleJs({ display: "flex", alignItems: "center", gap: "12px" });
-  new Html("h1").text(friend.name).appendTo(headingContainer);
+    .styleJs({ display: "flex", alignItems: "center", gap: "1rem" });
+  new Html("h1")
+    .text(friend.name)
+    .styleJs({ textShadow: "0 1px 3px rgba(0,0,0,0.5)" })
+    .appendTo(headingContainer);
   new Html("div")
     .styleJs({
-      width: "12px",
-      height: "12px",
+      width: "14px",
+      height: "14px",
       borderRadius: "50%",
       backgroundColor: statusColor,
-      flexShrink: 0,
+      flexShrink: "0",
+      border: "2px solid rgba(255, 255, 255, 0.7)",
     })
     .appendTo(headingContainer);
 
   new Html("p")
     .text(statusText)
-    .styleJs({ margin: "0 0 10px 0" })
+    .styleJs({ margin: "0 0 1.5rem 0", color: "#adb5bd" })
     .appendTo(panel);
 
-  new Html("br").appendTo(panel);
+  let uiElements = [];
 
   const buttonContainer = new Html("div")
     .class("flex-list")
     .appendTo(panel)
-    .styleJs({ flexDirection: "column" });
+    .styleJs({ flexDirection: "column", gap: "10px" });
 
-  const inviteButton = new Html("button")
-    .text("Invite to Party")
-    .appendTo(buttonContainer)
-    .styleJs({ width: "100%" })
-    .on("click", () => {
-      console.log(`[PARTIES] TODO: Implement invite logic for ${friend.name}`);
-      Sfx.playSfx("deck_ui_launch_game.wav");
-    });
+  if (activeGame.activeParty) {
+    const inviteButton = new Html("button")
+      .text(`Invite to ${activeGame.activeParty.partyName}`)
+      .appendTo(buttonContainer)
+      .styleJs({ width: "100%" })
+      .on("click", () => {
+        console.log(
+          `[PARTIES] TODO: Implement invite logic for ${friend.name}`,
+        );
+        Sfx.playSfx("deck_ui_launch_game.wav");
+      });
+    uiElements.push([inviteButton.elm]);
+  }
 
   const chatButton = new Html("button")
     .text("Chat")
@@ -122,9 +220,9 @@ const showProfilePanel = (friend) => {
       console.log(`[PARTIES] TODO: Implement chat logic for ${friend.name}`);
       Sfx.playSfx("deck_ui_misc_sfx.wav");
     });
+  uiElements.push([chatButton.elm]);
 
   const uiType = "horizontal";
-  const uiElements = [[inviteButton.elm], [chatButton.elm]];
   const callback = (evt) => {
     if (evt === "back") {
       closePanel(panel);
@@ -150,8 +248,7 @@ let onOverlayOpen = async (e) => {
     };
 
     overlayState.container = new Html("div").appendTo("body").styleJs({
-      zIndex: 2147483647,
-      backgroundColor: "rgba(0,0,0,0.5)",
+      backgroundColor: "rgba(0,0,0,0.6)",
       width: "100%",
       height: "100%",
       top: "0",
@@ -162,71 +259,214 @@ let onOverlayOpen = async (e) => {
       alignItems: "flex-start",
       padding: "4rem",
       gap: "2rem",
+      zIndex: "1000",
     });
   }
 
-  const panel = createPanel(overlayState.container);
+  const panel = createPanel(overlayState.container, { width: "30%" });
   const ws = root.Security.getSecureVariable("CHERRY_TREE_WS");
   const friends = ws
     ? (await ws.sendMessage({ type: "get-friends" })).result
     : [];
+  const uiType = "horizontal";
+  let uiElements = [];
 
   const headingContents = new Html("div")
     .appendTo(panel)
-    .styleJs({ display: "flex", flexDirection: "column", gap: "10px" });
-  new Html("h1").text("Social Hub").appendTo(headingContents);
-  new Html("p")
-    .html(`Currently playing: <strong>${activeGame.gameName}</strong>`)
+    .styleJs({ display: "flex", flexDirection: "column", gap: "0.25rem" });
+  new Html("h1")
+    .text("Social Hub")
+    .styleJs({
+      textShadow: "0 1px 3px rgba(0,0,0,0.5)",
+      marginBottom: "0.5rem",
+    })
     .appendTo(headingContents);
-  new Html("br").appendTo(panel);
-  new Html("h2")
-    .text("Your friends")
-    .appendTo(panel)
-    .styleJs({ paddingBottom: "10px" });
+  new Html("p")
+    .html(
+      activeGame.activeParty
+        ? `In a party: <strong>${activeGame.activeParty.partyName}</strong>`
+        : `Currently playing: <strong>${activeGame.gameName}</strong>`,
+    )
+    .styleJs({ color: "#adb5bd", margin: "0" })
+    .appendTo(headingContents);
 
-  const uiType = "horizontal";
-  let uiElements = [];
+  new Html("div").appendTo(panel).styleJs({
+    height: "1px",
+    width: "100%",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    margin: "1rem 0",
+  });
+
+  let partyButtons = new Html("div").appendTo(panel).styleJs({
+    width: "100%",
+    display: "flex",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: "10px",
+  });
+
+  let buttonStates = {
+    inParty: () => {
+      new Html("button").html(icons.unmute).appendTo(partyButtons).styleJs({
+        minWidth: "3.25rem",
+        height: "3.25rem",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0.8rem",
+      });
+      new Html("button").html(icons.undeafen).appendTo(partyButtons).styleJs({
+        minWidth: "3.25rem",
+        height: "3.25rem",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0.8rem",
+      });
+      new Html("button").html(icons.replay).appendTo(partyButtons).styleJs({
+        minWidth: "3.25rem",
+        height: "3.25rem",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0.8rem",
+      });
+      new Html("button").html(icons.settings).appendTo(partyButtons).styleJs({
+        minWidth: "3.25rem",
+        height: "3.25rem",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0.8rem",
+      });
+    },
+    notInParty: () => {
+      new Html("button")
+        .html(`${icons.plus} <span>Create</span>`)
+        .appendTo(partyButtons)
+        .styleJs({
+          minWidth: "3.25rem",
+          height: "3.25rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0.8rem",
+          gap: "5px",
+        });
+      new Html("button")
+        .html(`${icons.settings} <span>Settings</span>`)
+        .appendTo(partyButtons)
+        .styleJs({
+          minWidth: "3.25rem",
+          height: "3.25rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0.8rem",
+          gap: "5px",
+        });
+    },
+  };
+
+  activeGame.activeParty ? buttonStates.inParty() : buttonStates.notInParty();
+
+  uiElements.push(partyButtons.elm.children);
+
+  new Html("div").appendTo(panel).styleJs({
+    height: "1px",
+    width: "100%",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    margin: "1rem 0",
+  });
+
+  new Html("h2").text("Your friends").appendTo(panel).styleJs({
+    paddingBottom: "0.5rem",
+    textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+    borderBottom: "1px solid rgba(255,255,255,0.1)",
+    marginBottom: "1rem",
+  });
+
   if (friends.length > 0) {
+    const friendListContainer = new Html("div")
+      .class("flex-list")
+      .styleJs({ display: "flex", flexDirection: "column", gap: "0.5rem" })
+      .appendTo(panel);
     friends.forEach((friend) => {
       const row = new Html("button")
-        .class("flex-list")
-        .appendTo(panel)
+        .appendTo(friendListContainer)
         .styleJs({
           width: "100%",
           display: "flex",
+          alignItems: "center",
+          padding: "0.75rem 1rem",
+          borderRadius: "0.5rem",
+          background: "rgba(0,0,0,0.2)",
+          transition: "all 0.2s ease",
         })
         .on("click", () => {
           row.classOff("over");
           Sfx.playSfx("deck_ui_navigation.wav");
           showProfilePanel(friend);
-        });
+        })
+        .on(
+          "mouseenter",
+          (e) => (e.target.style.background = "rgba(0,0,0,0.4)"),
+        )
+        .on(
+          "mouseleave",
+          (e) => (e.target.style.background = "rgba(0,0,0,0.2)"),
+        );
 
       const nameContainer = new Html("div").appendTo(row).styleJs({
         display: "flex",
         alignItems: "center",
-        gap: "10px",
+        gap: "0.75rem",
+        flexGrow: "1",
       });
 
       new Html("div")
         .styleJs({
-          width: "10px",
-          height: "10px",
+          width: "12px",
+          height: "12px",
           borderRadius: "50%",
-          backgroundColor: friend.status === 1 ? "#4CAF50" : "#6c757d",
-          flexShrink: 0,
+          backgroundColor:
+            friend.status === 1 ? "var(--accent-color)" : "#6c757d",
+          flexShrink: "0",
+          border: "2px solid rgba(255,255,255,0.5)",
         })
         .appendTo(nameContainer);
 
-      new Html("span").text(friend.name).appendTo(nameContainer);
+      new Html("span")
+        .text(friend.name)
+        .styleJs({ fontSize: "1rem", fontWeight: "500" })
+        .appendTo(nameContainer);
+
+      new Html("div").appendTo(row).styleJs({
+        width: "0.6em",
+        height: "0.6em",
+        borderColor: "#adb5bd",
+        borderStyle: "solid",
+        borderWidth: "0.15em 0.15em 0 0",
+        transform: "rotate(45deg)",
+      });
 
       uiElements.push([row.elm]);
     });
   } else {
-    new Html("button")
-      .text("You don't have a friend yet!")
-      .class("flex-list")
+    new Html("div")
+      .text("You don't have any friends yet!")
       .appendTo(panel)
-      .styleJs({ width: "100%" });
+      .styleJs({
+        width: "100%",
+        textAlign: "center",
+        color: "#adb5bd",
+        padding: "2rem 0",
+        fontStyle: "italic",
+      });
   }
 
   const callback = (evt) => {
@@ -278,6 +518,13 @@ const pkg = {
         "CherryTree.Parties.Overlay.Open",
         onOverlayOpen,
       );
+
+      showSocialHubToast({
+        icon: icons.users,
+        title: "Social Hub Available",
+        subtitle: `Invite friends and play <strong>${activeGame.gameName}</strong> together.`,
+        hint: "Press the <strong>Social Hub</strong> button to open",
+      });
     },
     unregisterGame() {
       for (const [hostCode, party] of activeParties.entries()) {
@@ -331,9 +578,28 @@ const pkg = {
           };
 
           activeParties.set(hostCode, party);
+          activeGame.activeParty = {
+            partyName,
+            hostCode,
+            endParty: () => {
+              const p = activeParties.get(hostCode);
+              if (p && p.peer && !p.peer.destroyed) {
+                p.peer.destroy();
+              }
+              activeParties.delete(hostCode);
+              console.log(`[PARTIES] Ended party: ${hostCode}`);
+            },
+          };
           console.log("[PARTIES] Party created successfully:", {
             partyName,
             hostCode,
+          });
+
+          showSocialHubToast({
+            icon: icons.users,
+            title: "Party created",
+            subtitle: `<strong>${partyName}</strong> has been created!`,
+            hint: "Open the <strong>Social Hub</strong> to invite friends",
           });
 
           resolve({
@@ -345,6 +611,11 @@ const pkg = {
                 p.peer.destroy();
               }
               activeParties.delete(hostCode);
+              activeGame.activeParty = null;
+              root.Libs.Notify.show(
+                "Party ended",
+                `${party.partyName} has ended.`,
+              );
               console.log(`[PARTIES] Ended party: ${hostCode}`);
             },
           });
@@ -366,6 +637,8 @@ const pkg = {
         party.peer.destroy();
       }
       activeParties.delete(hostCode);
+      activeGame.activeParty = null;
+      root.Libs.Notify.show("Party ended", `${party.partyName} has ended.`);
       console.log(`[PARTIES] Ended party: ${hostCode}`);
     },
     getPartyInfo(hostCode) {
