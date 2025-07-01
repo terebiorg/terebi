@@ -492,10 +492,10 @@ let onOverlayOpen = async (e) => {
   Ui.init(activeGame.pid, uiType, uiElements, callback);
 };
 
-const generateHostCode = () => {
+const generateHostCode = (prefix = "terebiParty-") => {
   const chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890";
-  let code = "terebiParty-";
+  let code = prefix;
   for (let i = 0; i < 10; i++) {
     code += chars[Math.floor(Math.random() * chars.length)];
   }
@@ -530,10 +530,11 @@ const pkg = {
         );
       });
       socket.on("partyInvite", (data) => {
+        console.log(data);
         showSocialHubToast({
           icon: icons.users,
           title: "Party Invite",
-          subtitle: `${data.host.name} invited you to ${data.info.partyName}!`,
+          subtitle: `${data.host.name} has invited you to <strong>${data.info.partyName}</strong>!`,
           hint: "Go to the <strong>Friends</strong> menu to accept!",
         });
       });
@@ -652,6 +653,71 @@ const pkg = {
 
         negotiatorPeer.on("connection", (conn) => {
           console.log(`[PARTIES] Incoming connection from ${conn.peer}`);
+          conn.on("data", (joinData) => {
+            console.log("join data", joinData);
+            if (!socket) {
+              conn.close();
+            }
+
+            socket.emit(
+              "verifyInviteToken",
+              { token: joinData.token },
+              (result) => {
+                console.log(result);
+                if (!result.valid) {
+                  conn.close();
+                }
+                if (result.decoded.userId != joinData.info.id) {
+                  conn.close();
+                }
+                let peerCode = generateHostCode(joinData.info.name);
+                let userPeer = new Peer(peerCode, {
+                  config: {
+                    iceServers: [
+                      {
+                        urls: "turn:freestun.net:3478",
+                        username: "free",
+                        credential: "free",
+                      },
+                    ],
+                  },
+                });
+                userPeer.on("open", () => {
+                  conn.send({ success: true, connectTo: peerCode });
+                });
+                userPeer.on("connection", (userConn) => {
+                  if (activeParty && Array.isArray(activeParty.peers)) {
+                    activeParty.peers.push({
+                      peer: userPeer,
+                      peerCode,
+                      userInfo: joinData.info,
+                      connection: userConn,
+                    });
+                    document.dispatchEvent(
+                      new CustomEvent("CherryTree.Party.PeerConnected", {
+                        detail: {
+                          peerCode,
+                          userInfo: joinData.info,
+                          connection: userConn,
+                        },
+                      }),
+                    );
+                    userConn.on("data", (msg) => {
+                      document.dispatchEvent(
+                        new CustomEvent("CherryTree.Party.PeerMessage", {
+                          detail: {
+                            peerCode,
+                            userInfo: joinData.info,
+                            message: msg,
+                          },
+                        }),
+                      );
+                    });
+                  }
+                });
+              },
+            );
+          });
         });
       });
     },
@@ -675,6 +741,102 @@ const pkg = {
         return activeParty;
       }
       return undefined;
+    },
+    joinParty(invite) {
+      return new Promise((resolve, reject) => {
+        if (
+          !invite ||
+          !invite.info ||
+          !invite.info.hostCode ||
+          !invite.inviteToken
+        ) {
+          reject(new Error("Invalid invite object"));
+          return;
+        }
+        const peer = new Peer(undefined, {
+          config: {
+            iceServers: [
+              {
+                urls: "turn:freestun.net:3478",
+                username: "free",
+                credential: "free",
+              },
+            ],
+          },
+        });
+
+        let userPeerConn = null;
+
+        peer.on("open", async () => {
+          let info = await Users.getUserInfo(await root.Security.getToken());
+          const conn = peer.connect(invite.info.hostCode);
+          conn.on("open", () => {
+            conn.send({ token: invite.inviteToken, info });
+            showSocialHubToast({
+              icon: icons.users,
+              title: "Verifying...",
+              subtitle: `We're getting you to join <strong>${invite.info.partyName}</strong>...`,
+              hint: "Wait for the verification to finish.",
+            });
+          });
+          conn.on("data", (data) => {
+            if (data.success && data.connectTo) {
+              userPeerConn = peer.connect(data.connectTo);
+              userPeerConn.on("open", () => {
+                showSocialHubToast({
+                  icon: icons.users,
+                  title: "Joined Party!",
+                  subtitle: `You have joined <strong>${invite.info.partyName}</strong>.`,
+                  hint: "",
+                });
+                resolve({
+                  send: (msg) => {
+                    if (userPeerConn && userPeerConn.open) {
+                      userPeerConn.send(msg);
+                    }
+                  },
+                  close: () => {
+                    if (userPeerConn) userPeerConn.close();
+                    if (peer) peer.destroy();
+                  },
+                  connection: userPeerConn,
+                  peer,
+                });
+              });
+              userPeerConn.on("data", (data) => {
+                console.log("[PARTIES] Data received", data);
+              });
+              userPeerConn.on("error", (err) => {
+                peer.destroy();
+                reject(err);
+              });
+            }
+          });
+          conn.on("error", (err) => {
+            peer.destroy();
+            reject(err);
+          });
+        });
+
+        peer.on("error", (err) => {
+          reject(err);
+        });
+      });
+    },
+    getPeers() {
+      if (activeParty && Array.isArray(activeParty.peers)) {
+        return activeParty.peers;
+      }
+      return [];
+    },
+    broadcast(data) {
+      if (activeParty && Array.isArray(activeParty.peers)) {
+        activeParty.peers.forEach(({ connection }) => {
+          if (connection && connection.open) {
+            connection.send(data);
+          }
+        });
+      }
     },
   },
 
