@@ -203,7 +203,13 @@ const showProfilePanel = (friend) => {
     .appendTo(panel)
     .styleJs({ flexDirection: "column", gap: "10px" });
 
-  if (activeGame.activeParty) {
+  // Only show invite button if the current user is the host
+  if (
+    activeGame.activeParty &&
+    activeParty &&
+    activeParty.peer &&
+    activeParty.peer.id === activeParty.hostCode // hostCode is the host's PeerJS id
+  ) {
     const inviteButton = new Html("button")
       .text(`Invite to ${activeGame.activeParty.partyName}`)
       .appendTo(buttonContainer)
@@ -530,6 +536,8 @@ const pkg = {
         );
       });
       socket.on("partyInvite", (data) => {
+        // Ignore party invites if already in a party
+        if (activeParty) return;
         console.log(data);
         showSocialHubToast({
           icon: icons.users,
@@ -789,6 +797,42 @@ const pkg = {
                   subtitle: `You have joined <strong>${invite.info.partyName}</strong>.`,
                   hint: "",
                 });
+
+                // Update state to reflect that the user is now in a party
+                activeParty = {
+                  partyName: invite.info.partyName,
+                  hostCode: invite.info.hostCode,
+                  peer: peer,
+                  peers: [], // For clients, this can be empty or hold the host connection if needed
+                  _ended: false,
+                  connection: userPeerConn,
+                };
+                activeGame.activeParty = {
+                  partyName: invite.info.partyName,
+                  hostCode: invite.info.hostCode,
+                  endParty: () =>
+                    endPartyInternal(
+                      invite.info.partyName,
+                      invite.info.hostCode,
+                    ),
+                };
+
+                // Remove partyInvite notifications for this party
+                // (No-op here, but future logic could filter notifications)
+
+                // Optionally, update UI if overlay is open
+                if (overlayState.container) {
+                  // Close all panels and re-open overlay to refresh UI state
+                  overlayState.panels.forEach(({ panel }) => panel.cleanup());
+                  overlayState.panels = [];
+                  overlayState.container.cleanup();
+                  overlayState.container = null;
+                  // Re-open overlay to show "in party" UI
+                  document.dispatchEvent(
+                    new CustomEvent("CherryTree.Parties.Overlay.Open"),
+                  );
+                }
+
                 resolve({
                   send: (msg) => {
                     if (userPeerConn && userPeerConn.open) {
@@ -796,8 +840,13 @@ const pkg = {
                     }
                   },
                   close: () => {
+                    // End party state and cleanup
                     if (userPeerConn) userPeerConn.close();
                     if (peer) peer.destroy();
+                    endPartyInternal(
+                      invite.info.partyName,
+                      invite.info.hostCode,
+                    );
                   },
                   connection: userPeerConn,
                   peer,
