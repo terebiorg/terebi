@@ -26,7 +26,14 @@ const overlayState = {
   originalUi: null,
 };
 
+let currentToast = null;
+
 const showSocialHubToast = (toastData) => {
+  if (currentToast) {
+    currentToast.cleanup();
+    currentToast = null;
+  }
+
   const toast = new Html("div").appendTo("body").styleJs({
     position: "fixed",
     bottom: "5%",
@@ -106,7 +113,10 @@ const showSocialHubToast = (toastData) => {
 
   setTimeout(() => {
     toast.cleanup();
+    if (currentToast === toast) currentToast = null;
   }, 5600);
+
+  currentToast = toast;
 };
 
 const createPanel = (container, { width = "28%", height = "95%" } = {}) => {
@@ -203,12 +213,11 @@ const showProfilePanel = (friend) => {
     .appendTo(panel)
     .styleJs({ flexDirection: "column", gap: "10px" });
 
-  // Only show invite button if the current user is the host
   if (
     activeGame.activeParty &&
     activeParty &&
     activeParty.peer &&
-    activeParty.peer.id === activeParty.hostCode // hostCode is the host's PeerJS id
+    activeParty.peer.id === activeParty.hostCode
   ) {
     const inviteButton = new Html("button")
       .text(`Invite to ${activeGame.activeParty.partyName}`)
@@ -222,6 +231,7 @@ const showProfilePanel = (friend) => {
           socket.emit("invite", {
             hostCode: activeParty.hostCode,
             userId: friend.id,
+            packageName: activeGame.packageName,
           });
         }
         Sfx.playSfx("deck_ui_launch_game.wav");
@@ -254,31 +264,33 @@ const showProfilePanel = (friend) => {
 };
 
 let onOverlayOpen = async (e) => {
-  if (!overlayState.container) {
-    Sfx.playSfx("deck_ui_show_modal.wav");
-    const currentUi = Ui.get(activeGame.pid);
-    overlayState.originalUi = {
-      pid: activeGame.pid,
-      prevLayout: currentUi.lists,
-      prevCallback: currentUi.parentCallback || (() => {}),
-      prevType: currentUi.type,
-    };
-
-    overlayState.container = new Html("div").appendTo("body").styleJs({
-      backgroundColor: "rgba(0,0,0,0.6)",
-      width: "100%",
-      height: "100%",
-      top: "0",
-      left: "0",
-      position: "absolute",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "flex-start",
-      padding: "4rem",
-      gap: "2rem",
-      zIndex: "1000",
-    });
+  if (overlayState.container) {
+    return;
   }
+
+  Sfx.playSfx("deck_ui_show_modal.wav");
+  const currentUi = Ui.get(activeGame.pid);
+  overlayState.originalUi = {
+    pid: activeGame.pid,
+    prevLayout: currentUi.lists,
+    prevCallback: currentUi.parentCallback || (() => {}),
+    prevType: currentUi.type,
+  };
+
+  overlayState.container = new Html("div").appendTo("body").styleJs({
+    backgroundColor: "rgba(0,0,0,0.6)",
+    width: "100%",
+    height: "100%",
+    top: "0",
+    left: "0",
+    position: "absolute",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "flex-start",
+    padding: "4rem",
+    gap: "2rem",
+    zIndex: "1000",
+  });
 
   const panel = createPanel(overlayState.container, { width: "30%" });
   const ws = root.Security.getSecureVariable("CHERRY_TREE_WS");
@@ -536,7 +548,6 @@ const pkg = {
         );
       });
       socket.on("partyInvite", (data) => {
-        // Ignore party invites if already in a party
         if (activeParty) return;
         console.log(data);
         showSocialHubToast({
@@ -557,8 +568,12 @@ const pkg = {
       if (!gameData.pid) {
         throw new Error("Process ID is required for overlay support!");
       }
+      if (!gameData.packageName || typeof gameData.packageName !== "string") {
+        throw new Error("packageName is required for party invites!");
+      }
       activeGame.pid = gameData.pid;
       activeGame.registered = true;
+      activeGame.packageName = gameData.packageName;
       document.addEventListener(
         "CherryTree.Parties.Overlay.Open",
         onOverlayOpen,
@@ -797,16 +812,17 @@ const pkg = {
                   subtitle: `You have joined <strong>${invite.info.partyName}</strong>.`,
                   hint: "",
                 });
+                Sfx.playSfx("deck_ui_launch_game.wav");
 
-                // Update state to reflect that the user is now in a party
                 activeParty = {
                   partyName: invite.info.partyName,
                   hostCode: invite.info.hostCode,
                   peer: peer,
-                  peers: [], // For clients, this can be empty or hold the host connection if needed
+                  peers: [],
                   _ended: false,
                   connection: userPeerConn,
                 };
+
                 activeGame.activeParty = {
                   partyName: invite.info.partyName,
                   hostCode: invite.info.hostCode,
@@ -817,22 +833,6 @@ const pkg = {
                     ),
                 };
 
-                // Remove partyInvite notifications for this party
-                // (No-op here, but future logic could filter notifications)
-
-                // Optionally, update UI if overlay is open
-                if (overlayState.container) {
-                  // Close all panels and re-open overlay to refresh UI state
-                  overlayState.panels.forEach(({ panel }) => panel.cleanup());
-                  overlayState.panels = [];
-                  overlayState.container.cleanup();
-                  overlayState.container = null;
-                  // Re-open overlay to show "in party" UI
-                  document.dispatchEvent(
-                    new CustomEvent("CherryTree.Parties.Overlay.Open"),
-                  );
-                }
-
                 resolve({
                   send: (msg) => {
                     if (userPeerConn && userPeerConn.open) {
@@ -840,7 +840,6 @@ const pkg = {
                     }
                   },
                   close: () => {
-                    // End party state and cleanup
                     if (userPeerConn) userPeerConn.close();
                     if (peer) peer.destroy();
                     endPartyInternal(

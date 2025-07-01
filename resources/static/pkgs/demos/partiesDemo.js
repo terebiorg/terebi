@@ -28,6 +28,7 @@ const pkg = {
     console.log(Sfx);
 
     await Parties.registerGame({
+      packageName: "demos:partiesDemo",
       name: "Parties Demo",
       pid: Pid,
     });
@@ -65,20 +66,16 @@ const pkg = {
       }
     });
 
-    // Expose joinParty for console testing
     window.joinPartyDemo = async function (invite) {
       try {
         let joinedParty = await Parties.joinParty(invite);
         console.log("Joined party!", joinedParty);
-        // Expose send and close for debugging
         window.joinedPartyConnection = joinedParty;
-        // Example: window.joinedPartyConnection.send("Hello from client!");
       } catch (err) {
         console.error("Failed to join party:", err);
       }
     };
 
-    // Expose more demo/debug functions to window
     window.getPartyPeers = () => Parties.getPeers();
     window.broadcastToParty = (msg) => Parties.broadcast(msg);
     window.createPartyDemo = async (name = "diddy party") => {
@@ -90,14 +87,12 @@ const pkg = {
       if (curParty && curParty.endParty) curParty.endParty();
     };
 
-    // Listen for peer connection events
     document.addEventListener("CherryTree.Party.PeerConnected", (e) => {
       const { peerCode, userInfo } = e.detail;
       console.log("[Demo] Peer connected:", peerCode, userInfo);
       Sfx.playSfx("deck_ui_misc_sfx.wav");
     });
 
-    // Listen for peer message events
     document.addEventListener("CherryTree.Party.PeerMessage", (e) => {
       const { peerCode, userInfo, message } = e.detail;
       console.log("[Demo] Message from peer:", peerCode, userInfo, message);
