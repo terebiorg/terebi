@@ -21,9 +21,10 @@ const pkg = {
         details: "Chillin' in the main menu",
       });
 
+    const Ui = Root.Processes.getService("UiLib").data;
     const Sfx = Root.Processes.getService("SfxLib").data;
     const User = Root.Processes.getService("UserSvc").data;
-    const Ui = Root.Processes.getService("UiLib").data;
+    const Parties = Root.Processes.getService("PartySvc").data;
 
     let currentMenuList;
 
@@ -42,6 +43,7 @@ const pkg = {
 
     logStep("MAIN MENU LOADED");
 
+    let gameParties = [];
     let watchParties = [];
     let friendsList = [];
     let info = {
@@ -52,6 +54,7 @@ const pkg = {
     if (ws) {
       logStep("There is a WebSocket detected");
       friendsList = (await ws.sendMessage({ type: "get-friends" })).result;
+      gameParties = Parties.getPartyList();
       info = await User.getUserInfo(await Root.Security.getToken());
       logStep("Websocket message received");
     } else {
@@ -95,6 +98,9 @@ const pkg = {
         if (s.data.who === info.id) return;
         friendsPlaying.set(s.data.who, s.data.app);
       }
+    });
+    document.addEventListener("CherryTree.Parties.List.Update", () => {
+      gameParties = Parties.getPartyList();
     });
 
     await vfs.importFS();
@@ -390,11 +396,13 @@ const pkg = {
     let friendListHtml = [],
       incomingFriendListHtml = [],
       outgoingFriendListHtml = [],
+      gamePartyListHtml = [],
       watchPartyListHtml = [];
 
     let friendListWrapperWrapper,
       outgoingFriendList,
       incomingFriendList,
+      gamePartyList,
       watchPartyList;
 
     let friendTitle = new Html("h1").text("Friends").appendTo(moreList);
@@ -440,6 +448,7 @@ const pkg = {
       friendListHtml = [];
       incomingFriendListHtml = [];
       outgoingFriendListHtml = [];
+      gamePartyListHtml = [];
       watchPartyListHtml = [];
 
       let mergedFriends = friendsList.map((usr) => {
@@ -658,6 +667,47 @@ const pkg = {
         }),
       );
 
+      gamePartyListHtml.push(
+        ...gameParties.map((party) => {
+          let button = new Html("button")
+            .class("auto", "flex-col", "transparent")
+            .appendMany(
+              new Html("div")
+                .class("flex-list", "flex-center")
+                .style({
+                  width: "12.5rem",
+                  height: "12.5rem",
+                  background: `${idToColor(party.host.id)}`,
+                  "border-radius": "0.15rem",
+                })
+                .append(
+                  new Html("span")
+                    .style({
+                      "background-color": "rgba(0,0,0,0.2)",
+                      width: "100%",
+                      height: "100%",
+                      display: "flex",
+                      "justify-content": "center",
+                      "align-items": "center",
+                      "font-size": "4.5rem",
+                      flex: "1",
+                    })
+                    .text(idToEmoji(party.host.id)),
+                ),
+              new Html("span").class("title").text(party.host.name),
+            )
+            .on("click", () => {
+              alert("Not implemented yet!");
+            });
+          let trimmed =
+            party.info.partyName.length > 20
+              ? party.info.partyName.slice(0, 20) + "..."
+              : party.info.partyName;
+          new Html("label").text(trimmed).appendTo(button);
+          return button;
+        }),
+      );
+
       if (incomingFriendListHtml.length === 0) {
         incomingFriendListHtml = [
           new Html("button").class("invisible").text("Nothing to see here.."),
@@ -666,6 +716,14 @@ const pkg = {
       if (outgoingFriendListHtml.length === 0) {
         outgoingFriendListHtml = [
           new Html("button").class("invisible").text("Nothing to see here.."),
+        ];
+      }
+
+      if (gamePartyListHtml.length === 0) {
+        gamePartyListHtml = [
+          new Html("button")
+            .class("invisible")
+            .text("No active game parties.."),
         ];
       }
 
@@ -728,6 +786,7 @@ const pkg = {
         friendListWrapperWrapper.cleanup();
         outgoingFriendList.cleanup();
         incomingFriendList.cleanup();
+        gamePartyList.cleanup();
         watchPartyList.cleanup();
       }
 
@@ -758,6 +817,14 @@ const pkg = {
         )
         .appendTo(friendList);
 
+      gamePartyList = new Html("div")
+        .class("flex-col")
+        .appendMany(
+          new Html("h1").class("title").text("game parties"),
+          new Html("div").class("flex-list").appendMany(...gamePartyListHtml),
+        )
+        .appendTo(friendList);
+
       watchPartyList = new Html("div")
         .class("flex-col")
         .appendMany(
@@ -770,6 +837,7 @@ const pkg = {
         friendListWrapper.elm.children,
         outgoingFriendListHtml,
         incomingFriendListHtml,
+        gamePartyListHtml,
         watchPartyListHtml,
       ];
     }
@@ -882,6 +950,7 @@ const pkg = {
                 friendListWrapper.elm.children,
                 outgoingFriendListHtml.map((m) => m.elm),
                 incomingFriendListHtml.map((m) => m.elm),
+                gamePartyListHtml.map((m) => m.elm),
                 watchPartyListHtml.map((m) => m.elm),
               ];
             }

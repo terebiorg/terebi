@@ -107,6 +107,7 @@ const pkg = {
       }
 
       let Users = Root.Processes.getService("UserSvc").data;
+      let Parties = Root.Processes.getService("PartySvc").data;
       let info = await Users.getUserInfo(await Root.Security.getToken());
 
       // define the tv's name, used for casting
@@ -131,6 +132,7 @@ const pkg = {
             "CHERRY_TREE_WS",
             await userSvc.subscribe(t),
           );
+          Parties.subscribe(t);
           await Root.Core.pkg.run(
             "ui:Onboarding",
             [{ redirectTo: "ui:MainMenu", launchArguments: [] }],

@@ -6,6 +6,9 @@ let root;
 let Ui;
 let Users;
 let Sfx;
+let socket;
+
+let partyServer = "http://localhost:5501/";
 
 let activeParty = null;
 let activeGame = {
@@ -14,6 +17,8 @@ let activeGame = {
   registered: false,
   pid: null,
 };
+
+let partyList = [];
 
 const overlayState = {
   container: null,
@@ -84,7 +89,7 @@ const showSocialHubToast = (toastData) => {
 
   const bottomSection = new Html("div").appendTo(toast).styleJs({
     padding: "0.8rem 1.25rem",
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "var(--background-default)",
   });
 
   new Html("span").html(toastData.hint).appendTo(bottomSection).styleJs({
@@ -166,7 +171,7 @@ const showProfilePanel = (friend) => {
           friend.lastOnline,
         ).toLocaleDateString()}`;
 
-  const statusColor = friend.status === 1 ? "var(--accent-color)" : "#6c757d";
+  const statusColor = friend.status === 1 ? "#1be350" : "#6c757d";
 
   const headingContainer = new Html("div")
     .appendTo(panel)
@@ -205,8 +210,14 @@ const showProfilePanel = (friend) => {
       .styleJs({ width: "100%" })
       .on("click", () => {
         console.log(
-          `[PARTIES] TODO: Implement invite logic for ${friend.name}`,
+          `[PARTIES] Inviting ${friend.name} to ${activeParty.partyName}`,
         );
+        if (socket) {
+          socket.emit("invite", {
+            hostCode: activeParty.hostCode,
+            userId: friend.id,
+          });
+        }
         Sfx.playSfx("deck_ui_launch_game.wav");
       });
     uiElements.push([inviteButton.elm]);
@@ -433,8 +444,7 @@ let onOverlayOpen = async (e) => {
           width: "12px",
           height: "12px",
           borderRadius: "50%",
-          backgroundColor:
-            friend.status === 1 ? "var(--accent-color)" : "#6c757d",
+          backgroundColor: friend.status === 1 ? "#1be350" : "#6c757d",
           flexShrink: "0",
           border: "2px solid rgba(255,255,255,0.5)",
         })
@@ -505,6 +515,32 @@ const pkg = {
     root = Root;
   },
   data: {
+    subscribe(token) {
+      socket = io(partyServer, {
+        auth: { token },
+      });
+      socket.on("connect", () => {
+        console.log("[PARTIES] Connected to socket!");
+      });
+      socket.on("parties", (data) => {
+        partyList = data;
+        console.log(partyList);
+        document.dispatchEvent(
+          new CustomEvent("CherryTree.Parties.List.Update"),
+        );
+      });
+      socket.on("partyInvite", (data) => {
+        showSocialHubToast({
+          icon: icons.users,
+          title: "Party Invite",
+          subtitle: `${data.host.name} invited you to ${data.info.partyName}!`,
+          hint: "Go to the <strong>Friends</strong> menu to accept!",
+        });
+      });
+    },
+    getPartyList() {
+      return partyList;
+    },
     registerGame(gameData) {
       if (gameData.name && typeof gameData.name == "string") {
         activeGame.gameName = gameData.name;
@@ -545,10 +581,12 @@ const pkg = {
       return new Promise((resolve, reject) => {
         if (!activeGame.registered) {
           reject(new Error("The game must be registered!"));
+          return;
         }
-        // Only allow one party at a time
+
         if (activeParty) {
           reject(new Error("A party is already active!"));
+          return;
         }
         const hostCode = generateHostCode();
         const negotiatorPeer = new Peer(hostCode, {
@@ -577,11 +615,17 @@ const pkg = {
             peers: [],
             _ended: false,
           };
+
           activeGame.activeParty = {
             partyName,
             hostCode,
             endParty: () => endPartyInternal(partyName, hostCode),
           };
+
+          if (socket) {
+            socket.emit("createParty", { partyName, hostCode });
+          }
+
           console.log("[PARTIES] Party created successfully:", {
             partyName,
             hostCode,
@@ -650,6 +694,9 @@ function endPartyInternal(partyName, hostCode) {
     activeParty._ended = true;
     if (activeParty.peer && !activeParty.peer.destroyed) {
       activeParty.peer.destroy();
+    }
+    if (socket) {
+      socket.emit("endParty", activeParty.hostCode);
     }
     showSocialHubToast({
       icon: icons.users,

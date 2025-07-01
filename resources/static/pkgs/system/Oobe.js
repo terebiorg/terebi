@@ -22,6 +22,7 @@ const pkg = {
 
     Sfx = Root.Processes.getService("SfxLib").data;
     const UserSvc = Root.Processes.getService("UserSvc").data;
+    const PartiesSvc = Root.Processes.getService("PartySvc").data;
     const Background = Root.Processes.getService("Background").data;
     Pid = Root.Pid;
     Ui = Root.Processes.getService("UiLib").data;
@@ -533,6 +534,7 @@ const pkg = {
                     checksComplete++;
                     checks();
                   });
+                  PartiesSvc.subscribe(token);
 
                   return "loading";
                 }
