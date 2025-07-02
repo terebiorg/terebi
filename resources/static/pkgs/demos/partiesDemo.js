@@ -101,7 +101,10 @@ const pkg = {
   },
   end: async function () {
     // Exit this UI when the process is exited
-    curParty.endParty();
+
+    if (curParty) {
+      curParty.endParty();
+    }
     Parties.unregisterGame();
     Ui.cleanup(Pid);
     Sfx.playSfx("deck_ui_out_of_game_detail.wav");
