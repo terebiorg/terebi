@@ -863,10 +863,33 @@ let onOverlayOpen = async (e) => {
       });
   }
 
+  // --- THIS IS THE FIX ---
+  // We replace the simple callback with the smarter, scrolling-aware one.
   const callback = (evt) => {
     if (evt === "back") {
       closePanel(panel);
+      return;
     }
+
+    // On any other navigation event ('up', 'down', etc.), we run the scroll logic.
+    // We use a short timeout to wait for the UI library to apply the '.over' class to the newly focused element.
+    setTimeout(() => {
+      // Find the currently focused element within our panel.
+      const focusedElm = panel.elm.querySelector(".over");
+
+      if (focusedElm) {
+        const topPos = focusedElm.offsetTop;
+        const panelHeight = panel.elm.clientHeight;
+        const elmHeight = focusedElm.offsetHeight;
+
+        const newScrollTop = topPos - panelHeight / 2 + elmHeight / 2;
+
+        panel.elm.scrollTo({
+          top: newScrollTop,
+          behavior: "smooth",
+        });
+      }
+    }, 50);
   };
 
   overlayState.panels.push({
