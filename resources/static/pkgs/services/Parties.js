@@ -1,4 +1,5 @@
 import { Peer } from "https://esm.sh/peerjs@1.5.4?bundle-deps";
+import settingsLib from "../../libs/settingsLib.js";
 import icons from "../../libs/icons.js";
 import Html from "/libs/html.js";
 
@@ -9,8 +10,10 @@ let Sfx;
 let socket;
 
 let partyServer = "http://localhost:5501/";
+let livekitServer = "wss://terebi-phgeum6f.livekit.cloud";
 
 let activeParty = null;
+let activeRoom = null;
 let activeGame = {
   gameName: "Terebi Game",
   activeParty: null,
@@ -119,7 +122,10 @@ const showSocialHubToast = (toastData) => {
   currentToast = toast;
 };
 
-const createPanel = (container, { width = "28%", height = "95%" } = {}) => {
+const createPanel = (
+  container,
+  { width = "28%", height = "95%", onClose = () => {} } = {},
+) => {
   const panel = new Html("div").appendTo(container).styleJs({
     backgroundColor: "var(--background-darker)",
     border: "0.1rem solid var(--background-lighter)",
@@ -138,6 +144,8 @@ const createPanel = (container, { width = "28%", height = "95%" } = {}) => {
     gap: "1rem",
   });
 
+  panel.onClose = onClose;
+
   Ui.transition("popIn", panel);
   return panel;
 };
@@ -145,6 +153,10 @@ const createPanel = (container, { width = "28%", height = "95%" } = {}) => {
 const closePanel = (panelToClose) => {
   Sfx.playSfx("deck_ui_hide_modal.wav");
   Ui.transition("popOut", panelToClose);
+
+  if (typeof panelToClose.onClose === "function") {
+    panelToClose.onClose();
+  }
 
   setTimeout(() => {
     panelToClose.cleanup();
@@ -168,7 +180,265 @@ const closePanel = (panelToClose) => {
   }, 200);
 };
 
+const showSettingsPanel = async () => {
+  Sfx.playSfx("deck_ui_navigation.wav");
+
+  let localStream = null;
+  let audioContext = null;
+  let animationFrameId = null;
+  let latestCallId = 0;
+
+  const cleanupPreview = () => {
+    latestCallId++;
+    console.log("[PARTIES PREVIEW] Cleanup initiated...");
+
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+      localStream = null;
+    }
+    if (audioContext && audioContext.state !== "closed") {
+      audioContext.close();
+      audioContext = null;
+    }
+    document.removeEventListener("CherryTree.Comms.Audio.Update", startPreview);
+    document.removeEventListener("CherryTree.Comms.Video.Update", startPreview);
+  };
+
+  const panel = createPanel(overlayState.container, {
+    width: "32%",
+    height: "auto",
+    onClose: cleanupPreview,
+  });
+
+  const headingContainer = new Html("div")
+    .appendTo(panel)
+    .styleJs({ display: "flex", alignItems: "center", gap: "1rem" });
+  new Html("h1")
+    .text("Settings")
+    .styleJs({ textShadow: "0 1px 3px rgba(0,0,0,0.5)" })
+    .appendTo(headingContainer);
+  new Html("p")
+    .text("Configure communications settings")
+    .styleJs({ margin: "0 0 1.5rem 0", color: "#adb5bd" })
+    .appendTo(panel);
+
+  const previewContainer = new Html("div").appendTo(panel).styleJs({
+    width: "100%",
+    aspectRatio: "16 / 9",
+    backgroundColor: "#000",
+    borderRadius: "0.5rem",
+    marginBottom: "1rem",
+    overflow: "hidden",
+    position: "relative",
+  });
+
+  const videoPreview = new Html("video").appendTo(previewContainer).styleJs({
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "none",
+  });
+  videoPreview.elm.muted = true;
+  videoPreview.elm.playsInline = true;
+
+  const placeholderText = new Html("div").appendTo(previewContainer).styleJs({
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#6c757d",
+    padding: "1rem",
+    textAlign: "center",
+  });
+  const audioMeterContainer = new Html("div").appendTo(panel).styleJs({
+    height: "1rem",
+    backgroundColor: "var(--background-light)",
+    borderRadius: "0.5rem",
+    marginBottom: "1rem",
+    overflow: "hidden",
+  });
+  const audioMeterBar = new Html("div").appendTo(audioMeterContainer).styleJs({
+    width: "0%",
+    height: "100%",
+    backgroundColor: "#1be350",
+    transition: "width 0.1s linear",
+  });
+
+  const startPreview = async () => {
+    latestCallId++;
+    const currentCallId = latestCallId;
+
+    placeholderText.text("Loading...").style({ display: "flex" });
+    videoPreview.style({ display: "none" });
+
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+    }
+    if (audioContext && audioContext.state !== "closed") {
+      audioContext.close();
+    }
+
+    audioMeterBar.style({ width: "0%" });
+
+    const audioDeviceId = await window.localforage.getItem(
+      "settings__audioInput",
+    );
+    const videoDeviceId = await window.localforage.getItem(
+      "settings__videoInput",
+    );
+
+    if (!audioDeviceId && !videoDeviceId) {
+      if (currentCallId === latestCallId)
+        placeholderText.text("No devices selected");
+      return;
+    }
+
+    const constraints = {
+      audio: audioDeviceId
+        ? {
+            deviceId: { exact: audioDeviceId },
+            echoCancellation: true,
+            noiseSuppression: true,
+          }
+        : false,
+      video: videoDeviceId ? { deviceId: { exact: videoDeviceId } } : false,
+    };
+
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      if (currentCallId !== latestCallId) {
+        newStream.getTracks().forEach((track) => track.stop());
+        console.log(
+          `[PARTIES PREVIEW] Stale call (ID ${currentCallId}) resolved. Discarding stream.`,
+        );
+        return;
+      }
+
+      localStream = newStream;
+
+      const newVideoTrack = localStream.getVideoTracks()[0];
+      if (newVideoTrack) {
+        placeholderText.style({ display: "none" });
+        videoPreview.style({ display: "block" });
+        videoPreview.elm.srcObject = localStream;
+
+        videoPreview.elm.addEventListener(
+          "loadedmetadata",
+          async () => {
+            if (currentCallId !== latestCallId) return;
+            try {
+              await videoPreview.elm.play();
+            } catch (playError) {
+              videoPreview.style({ display: "none" });
+              placeholderText
+                .text("Error: Could not play video preview.")
+                .style({ display: "flex" });
+            }
+          },
+          { once: true },
+        );
+      } else {
+        placeholderText.text("No video device selected");
+      }
+
+      if (localStream.getAudioTracks().length > 0) {
+        audioContext = new AudioContext();
+        const analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        const source = audioContext.createMediaStreamSource(localStream);
+        source.connect(analyserNode);
+        const bufferLength = analyserNode.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        const draw = () => {
+          if (
+            currentCallId !== latestCallId ||
+            !audioContext ||
+            audioContext.state === "closed"
+          )
+            return;
+          analyserNode.getByteTimeDomainData(dataArray);
+          let sumSquares = 0.0;
+          for (const amplitude of dataArray) {
+            const val = amplitude / 128.0 - 1.0;
+            sumSquares += val * val;
+          }
+          const rms = Math.sqrt(sumSquares / dataArray.length);
+          const volumePercent = rms * 200;
+          audioMeterBar.style({ width: `${Math.min(100, volumePercent)}%` });
+          animationFrameId = requestAnimationFrame(draw);
+        };
+        draw();
+      }
+    } catch (err) {
+      if (currentCallId !== latestCallId) {
+        console.log(
+          `[PARTIES PREVIEW] Stale call (ID ${currentCallId}) threw an error, ignoring.`,
+        );
+        return;
+      }
+      console.error(
+        "[PARTIES PREVIEW] Error starting preview stream (getUserMedia):",
+        err,
+      );
+      videoPreview.style({ display: "none" });
+      placeholderText
+        .text("Error accessing media devices. Ensure permissions are granted.")
+        .style({ display: "flex" });
+    }
+  };
+
+  document.addEventListener("CherryTree.Comms.Audio.Update", startPreview);
+  document.addEventListener("CherryTree.Comms.Video.Update", startPreview);
+
+  startPreview();
+
+  let uiElements = [];
+  const buttonContainer = new Html("div")
+    .class("flex-list")
+    .appendTo(panel)
+    .styleJs({ flexDirection: "column", gap: "10px", marginTop: "1rem" });
+  const audioButton = new Html("button")
+    .text(`Set audio input device`)
+    .appendTo(buttonContainer)
+    .styleJs({ width: "100%" })
+    .on("click", () => {
+      settingsLib.audioInputSelection(activeGame.pid, overlayState.container);
+    });
+  const videoButton = new Html("button")
+    .text(`Set video input device`)
+    .appendTo(buttonContainer)
+    .styleJs({ width: "100%" })
+    .on("click", () => {
+      settingsLib.videoInputSelection(activeGame.pid, overlayState.container);
+    });
+  uiElements = [[audioButton.elm], [videoButton.elm]];
+  const uiType = "horizontal";
+  const callback = (evt) => {
+    if (evt === "back") {
+      closePanel(panel);
+    }
+  };
+  overlayState.panels.push({
+    panel,
+    ui: { type: uiType, lists: uiElements, callback },
+  });
+  Ui.init(activeGame.pid, uiType, uiElements, callback);
+};
 const showProfilePanel = (friend) => {
+  Sfx.playSfx("deck_ui_navigation.wav");
   const panel = createPanel(overlayState.container, {
     width: "28%",
     height: "auto",
@@ -231,6 +501,7 @@ const showProfilePanel = (friend) => {
           socket.emit("invite", {
             hostCode: activeParty.hostCode,
             userId: friend.id,
+            userName: friend.name,
             packageName: activeGame.packageName,
           });
         }
@@ -336,41 +607,47 @@ let onOverlayOpen = async (e) => {
 
   let buttonStates = {
     inParty: () => {
-      new Html("button").html(icons.unmute).appendTo(partyButtons).styleJs({
-        minWidth: "3.25rem",
-        height: "3.25rem",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "0.8rem",
+      new Html("button")
+        .html(`${icons.mute} <span>Mute</span>`)
+        .appendTo(partyButtons)
+        .styleJs({
+          minWidth: "3.25rem",
+          height: "3.25rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0.8rem",
+          gap: "5px",
+        });
+      let settingsButton = new Html("button")
+        .html(`${icons.settings} <span>Settings</span>`)
+        .appendTo(partyButtons)
+        .styleJs({
+          minWidth: "3.25rem",
+          height: "3.25rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0.8rem",
+          gap: "5px",
+        })
+        .on("click", () => {
+          settingsButton.classOff("over");
+          showSettingsPanel();
+        });
+
+      new Html("div").appendTo(panel).styleJs({
+        height: "1px",
+        width: "100%",
+        backgroundColor: "rgba(255,255,255,0.1)",
+        margin: "1rem 0",
       });
-      new Html("button").html(icons.undeafen).appendTo(partyButtons).styleJs({
-        minWidth: "3.25rem",
-        height: "3.25rem",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "0.8rem",
-      });
-      new Html("button").html(icons.replay).appendTo(partyButtons).styleJs({
-        minWidth: "3.25rem",
-        height: "3.25rem",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "0.8rem",
-      });
-      new Html("button").html(icons.settings).appendTo(partyButtons).styleJs({
-        minWidth: "3.25rem",
-        height: "3.25rem",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "0.8rem",
+
+      new Html("h2").text("Your party").appendTo(panel).styleJs({
+        paddingBottom: "0.5rem",
+        textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+        borderBottom: "1px solid rgba(255,255,255,0.1)",
+        marginBottom: "1rem",
       });
     },
     notInParty: () => {
@@ -386,7 +663,7 @@ let onOverlayOpen = async (e) => {
           padding: "0.8rem",
           gap: "5px",
         });
-      new Html("button")
+      let settingsButton = new Html("button")
         .html(`${icons.settings} <span>Settings</span>`)
         .appendTo(partyButtons)
         .styleJs({
@@ -397,6 +674,10 @@ let onOverlayOpen = async (e) => {
           justifyContent: "center",
           padding: "0.8rem",
           gap: "5px",
+        })
+        .on("click", () => {
+          settingsButton.classOff("over");
+          showSettingsPanel();
         });
     },
   };
@@ -438,7 +719,6 @@ let onOverlayOpen = async (e) => {
         })
         .on("click", () => {
           row.classOff("over");
-          Sfx.playSfx("deck_ui_navigation.wav");
           showProfilePanel(friend);
         })
         .on(
@@ -647,7 +927,15 @@ const pkg = {
           };
 
           if (socket) {
-            socket.emit("createParty", { partyName, hostCode });
+            socket.emit(
+              "createParty",
+              { partyName, hostCode },
+              async (data) => {
+                activeRoom = new LivekitClient.Room();
+                await activeRoom.connect(livekitServer, data.livekitToken);
+                console.log("connected to room", activeRoom.name);
+              },
+            );
           }
 
           console.log("[PARTIES] Party created successfully:", {
@@ -716,6 +1004,12 @@ const pkg = {
                       userInfo: joinData.info,
                       connection: userConn,
                     });
+                    showSocialHubToast({
+                      icon: icons.users,
+                      title: "Joined Party!",
+                      subtitle: `${joinData.info.name} joined your party.`,
+                      hint: "Chat with them by opening the <strong>Social Hub</strong>!",
+                    });
                     document.dispatchEvent(
                       new CustomEvent("CherryTree.Party.PeerConnected", {
                         detail: {
@@ -771,7 +1065,8 @@ const pkg = {
           !invite ||
           !invite.info ||
           !invite.info.hostCode ||
-          !invite.inviteToken
+          !invite.inviteToken ||
+          !invite.livekitToken
         ) {
           reject(new Error("Invalid invite object"));
           return;
@@ -805,7 +1100,7 @@ const pkg = {
           conn.on("data", (data) => {
             if (data.success && data.connectTo) {
               userPeerConn = peer.connect(data.connectTo);
-              userPeerConn.on("open", () => {
+              userPeerConn.on("open", async () => {
                 showSocialHubToast({
                   icon: icons.users,
                   title: "Joined Party!",
@@ -832,6 +1127,10 @@ const pkg = {
                       invite.info.hostCode,
                     ),
                 };
+
+                activeRoom = new LivekitClient.Room();
+                await activeRoom.connect(livekitServer, invite.livekitToken);
+                console.log("connected to room", activeRoom.name);
 
                 resolve({
                   send: (msg) => {
@@ -904,6 +1203,9 @@ function endPartyInternal(partyName, hostCode) {
     activeParty._ended = true;
     if (activeParty.peer && !activeParty.peer.destroyed) {
       activeParty.peer.destroy();
+    }
+    if (activeRoom) {
+      activeRoom.disconnect();
     }
     if (socket) {
       socket.emit("endParty", activeParty.hostCode);

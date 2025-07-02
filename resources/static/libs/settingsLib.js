@@ -470,6 +470,12 @@ export default {
       audioInputs[audioResult.id].deviceId,
     );
 
+    document.dispatchEvent(
+      new CustomEvent("CherryTree.Comms.Audio.Update", {
+        detail: audioInputs[audioResult.id].deviceId,
+      }),
+    );
+
     Notify.show("Audio Input Selection", "Audio input device has been set.");
   },
   videoInputSelection: async (pid, wrapper) => {
@@ -497,6 +503,12 @@ export default {
     await window.localforage.setItem(
       "settings__videoInput",
       videoInputs[videoResult.id].deviceId,
+    );
+
+    document.dispatchEvent(
+      new CustomEvent("CherryTree.Comms.Video.Update", {
+        detail: videoInputs[videoResult.id].deviceId,
+      }),
     );
 
     Notify.show("Video Input Selection", "Video input device has been set.");
