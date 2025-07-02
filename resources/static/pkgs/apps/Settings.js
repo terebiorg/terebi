@@ -335,6 +335,41 @@ const pkg = {
         );
         ui.add(row3.elm.children);
       },
+      Comms: (wrapper, ui) => {
+        wrapper.styleJs({
+          padding: "20px",
+        });
+        new Html("h1")
+          .text(langManager.getString("settings.categories.comms.title"))
+          .appendTo(wrapper);
+        new Html("p")
+          .text(langManager.getString("settings.categories.comms.description"))
+          .appendTo(wrapper);
+
+        new Html("br").appendTo(wrapper);
+        const row = new Html("div").class("flex-list").appendTo(wrapper);
+
+        row.appendMany(
+          new Html("button")
+            .text(
+              langManager.getString("settings.categories.comms.items.audio"),
+            )
+            .on("click", () =>
+              settingsLib.audioInputSelection(Root.Pid, wrapper),
+            ),
+          new Html("button")
+            .text(
+              langManager.getString("settings.categories.comms.items.video"),
+            )
+            .on("click", () =>
+              settingsLib.videoInputSelection(Root.Pid, wrapper),
+            ),
+          new Html("button")
+            .text(langManager.getString("settings.categories.comms.items.test"))
+            .on("click", () => console.log("not implemented")),
+        );
+        ui.add(row.elm.children);
+      },
     };
     this.tabbedUi = new TabbedUI({
       pid: Pid,

@@ -443,4 +443,62 @@ export default {
       await promptDone();
     }
   },
+  audioInputSelection: async (pid, wrapper) => {
+    let audioInputs = [];
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      audioInputs = devices.filter((d) => d.kind === "audioinput");
+    }
+
+    let audioResult = await Modal.Show({
+      parent: wrapper,
+      pid: pid,
+      title: "Select Audio Input",
+      description: "Choose your preferred audio input device.",
+      buttons:
+        audioInputs.length > 0
+          ? audioInputs.map((d) => ({
+              type: "primary",
+              text: d.label || `Audio Input ${d.deviceId.slice(-4)}`,
+            }))
+          : [{ type: "primary", text: "No audio input found", disabled: true }],
+    });
+    if (audioResult.canceled === true || audioInputs.length === 0) return;
+
+    await window.localforage.setItem(
+      "settings__audioInput",
+      audioInputs[audioResult.id].deviceId,
+    );
+
+    Notify.show("Audio Input Selection", "Audio input device has been set.");
+  },
+  videoInputSelection: async (pid, wrapper) => {
+    let videoInputs = [];
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoInputs = devices.filter((d) => d.kind === "videoinput");
+    }
+
+    let videoResult = await Modal.Show({
+      parent: wrapper,
+      pid: pid,
+      title: "Select Video Input",
+      description: "Choose your preferred video input device.",
+      buttons:
+        videoInputs.length > 0
+          ? videoInputs.map((d) => ({
+              type: "primary",
+              text: d.label || `Video Input ${d.deviceId.slice(-4)}`,
+            }))
+          : [{ type: "primary", text: "No video input found", disabled: true }],
+    });
+    if (videoResult.canceled === true || videoInputs.length === 0) return;
+
+    await window.localforage.setItem(
+      "settings__videoInput",
+      videoInputs[videoResult.id].deviceId,
+    );
+
+    Notify.show("Video Input Selection", "Video input device has been set.");
+  },
 };

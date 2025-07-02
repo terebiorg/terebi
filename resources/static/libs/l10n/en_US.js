@@ -179,6 +179,15 @@ export default {
         testPattern: "Open test pattern",
         testPatternName: "SMPTE test pattern",
       },
+      comms: {
+        title: "Communications",
+        description: "Configure audio/video inputs for voice/video chat.",
+        items: {
+          audio: "Set Audio Input",
+          video: "Set Video Input",
+          test: "Test Inputs",
+        },
+      },
     },
     quit: "Quit Settings",
     quit: "Quit Settings",
