@@ -29,6 +29,11 @@ const overlayState = {
   originalUi: null,
 };
 
+const lastXY = {
+  x: 0,
+  y: 0,
+};
+
 let currentToast = null;
 
 const showSocialHubToast = (toastData) => {
@@ -176,6 +181,7 @@ const closePanel = (panelToClose) => {
       const lastPanel = overlayState.panels[overlayState.panels.length - 1];
       const { type, lists, callback } = lastPanel.ui;
       Ui.init(activeGame.pid, type, lists, callback);
+      Ui.updatePos(activeGame.pid, lastXY);
     }
   }, 200);
 };
@@ -866,6 +872,9 @@ let onOverlayOpen = async (e) => {
   // --- THIS IS THE FIX ---
   // We replace the simple callback with the smarter, scrolling-aware one.
   const callback = (evt) => {
+    console.log(evt);
+    lastXY.x = evt.x;
+    lastXY.y = evt.y;
     if (evt === "back") {
       closePanel(panel);
       return;
