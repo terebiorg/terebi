@@ -487,7 +487,8 @@ const showProfilePanel = (friend) => {
     activeGame.activeParty &&
     activeParty &&
     activeParty.peer &&
-    activeParty.peer.id === activeParty.hostCode
+    activeParty.peer.id === activeParty.hostCode &&
+    !friend.joined
   ) {
     const inviteButton = new Html("button")
       .text(`Invite to ${activeGame.activeParty.partyName}`)
@@ -500,8 +501,7 @@ const showProfilePanel = (friend) => {
         if (socket) {
           socket.emit("invite", {
             hostCode: activeParty.hostCode,
-            userId: friend.id,
-            userName: friend.name,
+            user: friend,
             packageName: activeGame.packageName,
           });
         }
@@ -607,84 +607,170 @@ let onOverlayOpen = async (e) => {
 
   let buttonStates = {
     inParty: () => {
-      new Html("button")
-        .html(`${icons.mute} <span>Mute</span>`)
-        .appendTo(partyButtons)
-        .styleJs({
-          minWidth: "3.25rem",
-          height: "3.25rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "0.8rem",
-          gap: "5px",
-        });
-      let settingsButton = new Html("button")
-        .html(`${icons.settings} <span>Settings</span>`)
-        .appendTo(partyButtons)
-        .styleJs({
-          minWidth: "3.25rem",
-          height: "3.25rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "0.8rem",
-          gap: "5px",
-        })
-        .on("click", () => {
-          settingsButton.classOff("over");
-          showSettingsPanel();
+      return new Promise((resolve, reject) => {
+        new Html("button")
+          .html(`${icons.mute} <span>Mute</span>`)
+          .appendTo(partyButtons)
+          .styleJs({
+            minWidth: "3.25rem",
+            height: "3.25rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0.8rem",
+            gap: "5px",
+          });
+        let settingsButton = new Html("button")
+          .html(`${icons.settings} <span>Settings</span>`)
+          .appendTo(partyButtons)
+          .styleJs({
+            minWidth: "3.25rem",
+            height: "3.25rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0.8rem",
+            gap: "5px",
+          })
+          .on("click", () => {
+            settingsButton.classOff("over");
+            showSettingsPanel();
+          });
+
+        new Html("div").appendTo(panel).styleJs({
+          height: "1px",
+          width: "100%",
+          backgroundColor: "rgba(255,255,255,0.1)",
+          margin: "1rem 0",
         });
 
-      new Html("div").appendTo(panel).styleJs({
-        height: "1px",
-        width: "100%",
-        backgroundColor: "rgba(255,255,255,0.1)",
-        margin: "1rem 0",
-      });
+        new Html("h2").text("Your party").appendTo(panel).styleJs({
+          paddingBottom: "0.5rem",
+          textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+          borderBottom: "1px solid rgba(255,255,255,0.1)",
+          marginBottom: "1rem",
+        });
+        if (socket) {
+          socket.emit("partyInfo", activeParty.hostCode, (data) => {
+            console.log("Got party data", data);
+            let partyData = data.party;
+            if (partyData.participants.length > 0) {
+              const participantListContainer = new Html("div")
+                .class("flex-list")
+                .styleJs({
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.5rem",
+                })
+                .appendTo(panel);
+              partyData.participants.forEach((participant) => {
+                const row = new Html("button")
+                  .appendTo(participantListContainer)
+                  .styleJs({
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0.75rem 1rem",
+                    borderRadius: "0.5rem",
+                    background: "rgba(0,0,0,0.2)",
+                    transition: "all 0.2s ease",
+                  })
+                  .on("click", () => {
+                    row.classOff("over");
+                    showProfilePanel(participant);
+                  })
+                  .on(
+                    "mouseenter",
+                    (e) => (e.target.style.background = "rgba(0,0,0,0.4)"),
+                  )
+                  .on(
+                    "mouseleave",
+                    (e) => (e.target.style.background = "rgba(0,0,0,0.2)"),
+                  );
 
-      new Html("h2").text("Your party").appendTo(panel).styleJs({
-        paddingBottom: "0.5rem",
-        textShadow: "0 1px 2px rgba(0,0,0,0.4)",
-        borderBottom: "1px solid rgba(255,255,255,0.1)",
-        marginBottom: "1rem",
+                const nameContainer = new Html("div").appendTo(row).styleJs({
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  flexGrow: "1",
+                });
+
+                new Html("span")
+                  .text(participant.name)
+                  .styleJs({ fontSize: "1rem", fontWeight: "500" })
+                  .appendTo(nameContainer);
+
+                new Html("div").appendTo(row).styleJs({
+                  width: "0.6em",
+                  height: "0.6em",
+                  borderColor: "#adb5bd",
+                  borderStyle: "solid",
+                  borderWidth: "0.15em 0.15em 0 0",
+                  transform: "rotate(45deg)",
+                });
+
+                uiElements.push([row.elm]);
+              });
+            } else {
+              new Html("div")
+                .text("Invite some people!")
+                .appendTo(panel)
+                .styleJs({
+                  width: "100%",
+                  textAlign: "center",
+                  color: "#adb5bd",
+                  padding: "1rem 0",
+                  fontStyle: "italic",
+                });
+            }
+            resolve();
+          });
+        }
       });
     },
     notInParty: () => {
-      new Html("button")
-        .html(`${icons.plus} <span>Create</span>`)
-        .appendTo(partyButtons)
-        .styleJs({
-          minWidth: "3.25rem",
-          height: "3.25rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "0.8rem",
-          gap: "5px",
-        });
-      let settingsButton = new Html("button")
-        .html(`${icons.settings} <span>Settings</span>`)
-        .appendTo(partyButtons)
-        .styleJs({
-          minWidth: "3.25rem",
-          height: "3.25rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "0.8rem",
-          gap: "5px",
-        })
-        .on("click", () => {
-          settingsButton.classOff("over");
-          showSettingsPanel();
-        });
+      return new Promise((resolve, reject) => {
+        new Html("button")
+          .html(`${icons.plus} <span>Create</span>`)
+          .appendTo(partyButtons)
+          .styleJs({
+            minWidth: "3.25rem",
+            height: "3.25rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0.8rem",
+            gap: "5px",
+          });
+        let settingsButton = new Html("button")
+          .html(`${icons.settings} <span>Settings</span>`)
+          .appendTo(partyButtons)
+          .styleJs({
+            minWidth: "3.25rem",
+            height: "3.25rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0.8rem",
+            gap: "5px",
+          })
+          .on("click", () => {
+            settingsButton.classOff("over");
+            showSettingsPanel();
+          });
+
+        resolve();
+      });
     },
   };
 
-  activeGame.activeParty ? buttonStates.inParty() : buttonStates.notInParty();
-
   uiElements.push(partyButtons.elm.children);
+
+  if (activeGame.activeParty) {
+    await buttonStates.inParty();
+  } else {
+    await buttonStates.notInParty();
+  }
 
   new Html("div").appendTo(panel).styleJs({
     height: "1px",
@@ -1107,7 +1193,12 @@ const pkg = {
                   subtitle: `You have joined <strong>${invite.info.partyName}</strong>.`,
                   hint: "",
                 });
+
                 Sfx.playSfx("deck_ui_launch_game.wav");
+
+                if (socket) {
+                  socket.emit("participantJoin", invite.info.hostCode);
+                }
 
                 activeParty = {
                   partyName: invite.info.partyName,
@@ -1125,6 +1216,7 @@ const pkg = {
                     endPartyInternal(
                       invite.info.partyName,
                       invite.info.hostCode,
+                      true,
                     ),
                 };
 
@@ -1144,6 +1236,7 @@ const pkg = {
                     endPartyInternal(
                       invite.info.partyName,
                       invite.info.hostCode,
+                      true,
                     );
                   },
                   connection: userPeerConn,
@@ -1198,7 +1291,7 @@ const pkg = {
 
 export default pkg;
 
-function endPartyInternal(partyName, hostCode) {
+function endPartyInternal(partyName, hostCode, participant = false) {
   if (activeParty && !activeParty._ended) {
     activeParty._ended = true;
     if (activeParty.peer && !activeParty.peer.destroyed) {
@@ -1208,12 +1301,18 @@ function endPartyInternal(partyName, hostCode) {
       activeRoom.disconnect();
     }
     if (socket) {
-      socket.emit("endParty", activeParty.hostCode);
+      if (!participant) {
+        socket.emit("endParty", hostCode);
+      } else {
+        socket.emit("participantLeave", hostCode);
+      }
     }
     showSocialHubToast({
       icon: icons.users,
-      title: "Party ended",
-      subtitle: `<strong>${partyName}</strong> has ended.`,
+      title: participant ? "You left the party" : "Party ended",
+      subtitle: participant
+        ? `You left <strong>${partyName}</strong>`
+        : `<strong>${partyName}</strong> has ended.`,
       hint: "",
     });
     console.log(`[PARTIES] Ended party: ${hostCode}`);
