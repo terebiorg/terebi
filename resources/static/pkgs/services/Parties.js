@@ -736,18 +736,18 @@ let onOverlayOpen = async (e) => {
     },
     notInParty: () => {
       return new Promise((resolve, reject) => {
-        new Html("button")
-          .html(`${icons.plus} <span>Create</span>`)
-          .appendTo(partyButtons)
-          .styleJs({
-            minWidth: "3.25rem",
-            height: "3.25rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0.8rem",
-            gap: "5px",
-          });
+        // new Html("button")
+        //   .html(`${icons.plus} <span>Create</span>`)
+        //   .appendTo(partyButtons)
+        //   .styleJs({
+        //     minWidth: "3.25rem",
+        //     height: "3.25rem",
+        //     display: "flex",
+        //     alignItems: "center",
+        //     justifyContent: "center",
+        //     padding: "0.8rem",
+        //     gap: "5px",
+        //   });
         let settingsButton = new Html("button")
           .html(`${icons.settings} <span>Settings</span>`)
           .appendTo(partyButtons)
