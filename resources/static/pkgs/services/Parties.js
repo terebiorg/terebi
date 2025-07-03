@@ -3,6 +3,7 @@ import settingsLib from "../../libs/settingsLib.js";
 import icons from "../../libs/icons.js";
 import Html from "/libs/html.js";
 
+let info;
 let root;
 let Ui;
 let Users;
@@ -35,6 +36,254 @@ const lastXY = {
 };
 
 let currentToast = null;
+
+let videoStreams = new Map();
+let audioStreams = new Map();
+let participantButtons = new Map();
+let participantEventListeners = new Map();
+
+let participantMuteStates = {};
+
+let isMuted = false;
+let isCameraOn = false;
+let muteButton = null;
+let cameraButton = null;
+
+async function handleLiveKitRoom(server, token) {
+  const audioDeviceId = await window.localforage.getItem(
+    "settings__audioInput",
+  );
+  const videoDeviceId = await window.localforage.getItem(
+    "settings__videoInput",
+  );
+
+  const handleTrackSubscribed = (track, publication, participant) => {
+    console.log("subscribe!", publication);
+    console.log("track", track);
+    console.log("participant", participant);
+
+    if (!participantEventListeners.has(participant.identity)) {
+      participantMuteStates[participant.identity] = {
+        muted: false,
+        speaking: false,
+      };
+      const handlers = {
+        trackMuted: (pub) => {
+          console.log("track was muted", [pub.trackSid, participant.identity]);
+          console.log(participant);
+          if (participantButtons.has(participant.identity)) {
+            const btn = participantButtons.get(participant.identity);
+            if (pub.kind === "audio") {
+              btn.text(`${participant.identity} (Muted)`);
+            }
+          }
+          participantMuteStates[participant.identity].muted = true;
+          document.dispatchEvent(
+            new CustomEvent("CherryTree.Livekit.Participant.TrackMuted", {
+              detail: { participant, publication: pub },
+            }),
+          );
+        },
+        trackUnmuted: (pub) => {
+          console.log("track was unmuted", [
+            pub.trackSid,
+            participant.identity,
+          ]);
+          console.log(participant);
+          if (participantButtons.has(participant.identity)) {
+            const btn = participantButtons.get(participant.identity);
+            if (pub.kind === "audio") {
+              btn.text(participant.identity);
+            }
+          }
+          participantMuteStates[participant.identity].muted = false;
+          document.dispatchEvent(
+            new CustomEvent("CherryTree.Livekit.Participant.TrackUnmuted", {
+              detail: { participant, publication: pub },
+            }),
+          );
+        },
+        isSpeakingChanged: () => {
+          console.log("participant speak?", participant);
+          if (participantButtons.has(participant.identity)) {
+            const btn = participantButtons.get(participant.identity);
+            participantMuteStates[participant.identity].speaking =
+              participant.isSpeaking;
+            if (participant.isSpeaking && !participant.isMuted) {
+              btn.text(`${participant.identity} (Speaking)`);
+            } else if (!participant.isMuted) {
+              btn.text(participant.identity);
+            }
+          }
+          document.dispatchEvent(
+            new CustomEvent(
+              "CherryTree.Livekit.Participant.IsSpeakingChanged",
+              {
+                detail: { participant },
+              },
+            ),
+          );
+        },
+        connectionQualityChanged: () => {
+          console.log(participant);
+          document.dispatchEvent(
+            new CustomEvent(
+              "CherryTree.Livekit.Participant.ConnectionQualityChanged",
+              {
+                detail: { participant },
+              },
+            ),
+          );
+        },
+      };
+
+      participant
+        .on(LivekitClient.ParticipantEvent.TrackMuted, handlers.trackMuted)
+        .on(LivekitClient.ParticipantEvent.TrackUnmuted, handlers.trackUnmuted)
+        .on(
+          LivekitClient.ParticipantEvent.IsSpeakingChanged,
+          handlers.isSpeakingChanged,
+        )
+        .on(
+          LivekitClient.ParticipantEvent.ConnectionQualityChanged,
+          handlers.connectionQualityChanged,
+        );
+
+      participantEventListeners.set(participant.identity, handlers);
+    }
+
+    if (track.kind == "audio") {
+      const audio = new Html("audio")
+        .styleJs({ display: "none" })
+        .appendTo("body");
+      audio.elm.srcObject = track.mediaStream;
+      audioStreams.set(participant.identity, audio);
+      console.log("streams", audioStreams);
+      audio.elm.play();
+    }
+    if (track.kind == "video") {
+      videoStreams.set(participant.identity, track.mediaStream);
+      console.log("video streams", videoStreams);
+    }
+
+    document.dispatchEvent(
+      new CustomEvent("CherryTree.Livekit.Participant.TrackSubscribed", {
+        detail: { participant, publication },
+      }),
+    );
+  };
+
+  const handleTrackUnsubscribed = (track, publication, participant) => {
+    console.log("unsubscribe :(", publication);
+    console.log("track", track);
+    console.log("participant", participant);
+    if (track.kind == "audio") {
+      audioStreams.get(participant.identity).cleanup();
+      audioStreams.delete(participant.identity);
+    }
+    if (track.kind == "video") {
+      videoStreams.delete(participant.identity);
+    }
+  };
+
+  const handleActiveSpeakerChange = (data) => {
+    console.log("speaker change", data);
+  };
+
+  const handleDisconnect = (data) => {
+    console.log("disconnected", data);
+  };
+
+  const handleLocalTrackUnpublished = (data) => {
+    console.log("local track unpublished", data);
+  };
+
+  const handleParticipantDisconnected = (participant) => {
+    const handlers = participantEventListeners.get(participant.identity);
+    if (handlers) {
+      participant
+        .off(LivekitClient.ParticipantEvent.TrackMuted, handlers.trackMuted)
+        .off(LivekitClient.ParticipantEvent.TrackUnmuted, handlers.trackUnmuted)
+        .off(
+          LivekitClient.ParticipantEvent.IsSpeakingChanged,
+          handlers.isSpeakingChanged,
+        )
+        .off(
+          LivekitClient.ParticipantEvent.ConnectionQualityChanged,
+          handlers.connectionQualityChanged,
+        );
+      participantEventListeners.delete(participant.identity);
+    }
+
+    if (audioStreams.has(participant.identity)) {
+      audioStreams.get(participant.identity).cleanup();
+      audioStreams.delete(participant.identity);
+    }
+  };
+
+  activeRoom
+    .on(LivekitClient.RoomEvent.TrackSubscribed, handleTrackSubscribed)
+    .on(LivekitClient.RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
+    .on(
+      LivekitClient.RoomEvent.ActiveSpeakersChanged,
+      handleActiveSpeakerChange,
+    )
+    .on(LivekitClient.RoomEvent.Disconnected, handleDisconnect)
+    .on(
+      LivekitClient.RoomEvent.LocalTrackUnpublished,
+      handleLocalTrackUnpublished,
+    )
+    .on(
+      LivekitClient.RoomEvent.ParticipantDisconnected,
+      handleParticipantDisconnected,
+    );
+
+  await activeRoom.connect(server, token);
+  console.log("connected to room", activeRoom.name);
+
+  if (audioDeviceId) {
+    activeRoom.switchActiveDevice("audioinput", audioDeviceId);
+    activeRoom.switchActiveDevice("videoinput", videoDeviceId);
+    activeRoom.localParticipant.setMicrophoneEnabled(true);
+  }
+}
+
+function endPartyInternal(partyName, hostCode, participant = false) {
+  if (activeParty && !activeParty._ended) {
+    activeParty._ended = true;
+    if (activeParty.peer && !activeParty.peer.destroyed) {
+      activeParty.peer.destroy();
+    }
+    if (activeRoom) {
+      if (activeRoom.localParticipant) {
+        isCameraOn = false;
+        isMuted = false;
+        activeRoom.localParticipant.setMicrophoneEnabled(false);
+        activeRoom.localParticipant.setCameraEnabled(false);
+      }
+      activeRoom.disconnect();
+    }
+    if (socket) {
+      if (!participant) {
+        socket.emit("endParty", hostCode);
+      } else {
+        socket.emit("participantLeave", hostCode);
+      }
+    }
+
+    showSocialHubToast({
+      icon: icons.users,
+      title: participant ? "You left the party" : "Party ended",
+      subtitle: participant
+        ? `You left <strong>${partyName}</strong>`
+        : `<strong>${partyName}</strong> has ended.`,
+      hint: "",
+    });
+    console.log(`[PARTIES] Ended party: ${hostCode}`);
+    activeParty = null;
+    activeGame.activeParty = null;
+  }
+}
 
 const showSocialHubToast = (toastData) => {
   if (currentToast) {
@@ -177,6 +426,7 @@ const closePanel = (panelToClose) => {
         overlayState.originalUi;
       Ui.init(pid, prevType, prevLayout, prevCallback);
       overlayState.originalUi = null;
+      participantButtons.clear();
     } else {
       const lastPanel = overlayState.panels[overlayState.panels.length - 1];
       const { type, lists, callback } = lastPanel.ui;
@@ -193,6 +443,23 @@ const showSettingsPanel = async () => {
   let audioContext = null;
   let animationFrameId = null;
   let latestCallId = 0;
+
+  async function updateLiveKitDevices() {
+    if (activeRoom && activeRoom.localParticipant) {
+      const audioDeviceId = await window.localforage.getItem(
+        "settings__audioInput",
+      );
+      const videoDeviceId = await window.localforage.getItem(
+        "settings__videoInput",
+      );
+      if (audioDeviceId) {
+        activeRoom.switchActiveDevice("audioinput", audioDeviceId);
+      }
+      if (videoDeviceId) {
+        activeRoom.switchActiveDevice("videoinput", videoDeviceId);
+      }
+    }
+  }
 
   const cleanupPreview = () => {
     latestCallId++;
@@ -406,8 +673,18 @@ const showSettingsPanel = async () => {
     }
   };
 
-  document.addEventListener("CherryTree.Comms.Audio.Update", startPreview);
-  document.addEventListener("CherryTree.Comms.Video.Update", startPreview);
+  // Listen for AV input changes and update both preview and LiveKit
+  async function onAudioUpdate() {
+    await startPreview();
+    await updateLiveKitDevices();
+  }
+  async function onVideoUpdate() {
+    await startPreview();
+    await updateLiveKitDevices();
+  }
+
+  document.addEventListener("CherryTree.Comms.Audio.Update", onAudioUpdate);
+  document.addEventListener("CherryTree.Comms.Video.Update", onVideoUpdate);
 
   startPreview();
 
@@ -443,6 +720,229 @@ const showSettingsPanel = async () => {
   });
   Ui.init(activeGame.pid, uiType, uiElements, callback);
 };
+
+const showParticipantVideoPanel = (participantName) => {
+  Sfx.playSfx("deck_ui_navigation.wav");
+
+  let stream;
+  let cleanupLocalStream = null;
+  let videoTrackListener = null; // <-- add
+
+  const panel = createPanel(overlayState.container, {
+    width: "45%",
+    height: "auto",
+    onClose: () => {
+      if (cleanupLocalStream) cleanupLocalStream();
+      // Remove the event listener if still present
+      if (videoTrackListener) {
+        document.removeEventListener(
+          "CherryTree.Livekit.Participant.TrackSubscribed",
+          videoTrackListener,
+        );
+        videoTrackListener = null;
+      }
+    },
+  });
+
+  const headingContainer = new Html("div")
+    .appendTo(panel)
+    .styleJs({ display: "flex", alignItems: "center", gap: "1rem" });
+  new Html("h1")
+    .text(participantName)
+    .styleJs({ textShadow: "0 1px 3px rgba(0,0,0,0.5)" })
+    .appendTo(headingContainer);
+
+  const previewContainer = new Html("div").appendTo(panel).styleJs({
+    width: "100%",
+    aspectRatio: "16 / 9",
+    backgroundColor: "#000",
+    borderRadius: "0.5rem",
+    marginBottom: "1rem",
+    overflow: "hidden",
+    position: "relative",
+  });
+
+  const videoPreview = new Html("video").appendTo(previewContainer).styleJs({
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "none",
+    background: "#000",
+  });
+  videoPreview.elm.muted = true;
+  videoPreview.elm.playsInline = true;
+
+  const placeholderText = new Html("div").appendTo(previewContainer).styleJs({
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#6c757d",
+    padding: "1rem",
+    textAlign: "center",
+    background: "#000",
+  });
+
+  if (info && participantName === info.name) {
+    if (isCameraOn) {
+      const videoDeviceIdPromise = window.localforage
+        ? window.localforage.getItem("settings__videoInput")
+        : Promise.resolve(null);
+      (async () => {
+        let deviceId = await videoDeviceIdPromise;
+        if (deviceId) {
+          try {
+            const constraints = {
+              video: { deviceId: { exact: deviceId } },
+              audio: false,
+            };
+            const localStream = await navigator.mediaDevices.getUserMedia(
+              constraints,
+            );
+            stream = localStream;
+            cleanupLocalStream = () => {
+              localStream.getTracks().forEach((track) => track.stop());
+            };
+            videoPreview.elm.srcObject = stream;
+            videoPreview.style({ display: "block" });
+            placeholderText.style({ display: "none" });
+            videoPreview.elm.addEventListener(
+              "loadedmetadata",
+              async () => {
+                try {
+                  await videoPreview.elm.play();
+                } catch (playError) {
+                  videoPreview.style({ display: "none" });
+                  placeholderText
+                    .text("Error: Could not play video stream.")
+                    .style({ display: "flex" });
+                }
+              },
+              { once: true },
+            );
+          } catch (err) {
+            videoPreview.style({ display: "none" });
+            placeholderText
+              .text("No video stream available")
+              .style({ display: "flex" });
+          }
+        } else {
+          videoPreview.style({ display: "none" });
+          placeholderText
+            .text("No video stream available")
+            .style({ display: "flex" });
+        }
+      })();
+    } else {
+      videoPreview.style({ display: "none" });
+      placeholderText
+        .text("No video stream available")
+        .style({ display: "flex" });
+    }
+  } else {
+    stream = videoStreams.get(participantName);
+    if (stream) {
+      videoPreview.elm.srcObject = stream;
+      videoPreview.style({ display: "block" });
+      placeholderText.style({ display: "none" });
+      videoPreview.elm.addEventListener(
+        "loadedmetadata",
+        async () => {
+          try {
+            await videoPreview.elm.play();
+          } catch (playError) {
+            videoPreview.style({ display: "none" });
+            placeholderText
+              .text("Error: Could not play video stream.")
+              .style({ display: "flex" });
+          }
+        },
+        { once: true },
+      );
+    } else {
+      videoPreview.style({ display: "none" });
+      placeholderText
+        .text("No video stream available")
+        .style({ display: "flex" });
+
+      // --- Listen for video track subscribe event ---
+      videoTrackListener = (evt) => {
+        const { participant, publication } = evt.detail || {};
+        if (
+          participant &&
+          participant.identity === participantName &&
+          publication &&
+          publication.kind === "video"
+        ) {
+          // Try to get the stream again
+          const newStream = videoStreams.get(participantName);
+          if (newStream) {
+            videoPreview.elm.srcObject = newStream;
+            videoPreview.style({ display: "block" });
+            placeholderText.style({ display: "none" });
+            videoPreview.elm.addEventListener(
+              "loadedmetadata",
+              async () => {
+                try {
+                  await videoPreview.elm.play();
+                } catch (playError) {
+                  videoPreview.style({ display: "none" });
+                  placeholderText
+                    .text("Error: Could not play video stream.")
+                    .style({ display: "flex" });
+                }
+              },
+              { once: true },
+            );
+            // Remove listener after first use
+            document.removeEventListener(
+              "CherryTree.Livekit.Participant.TrackSubscribed",
+              videoTrackListener,
+            );
+            videoTrackListener = null;
+          }
+        }
+      };
+      document.addEventListener(
+        "CherryTree.Livekit.Participant.TrackSubscribed",
+        videoTrackListener,
+      );
+      // --- end listener setup ---
+    }
+  }
+
+  const buttonContainer = new Html("div")
+    .class("flex-list")
+    .appendTo(panel)
+    .styleJs({ flexDirection: "column", gap: "10px", marginTop: "1rem" });
+  const closeButton = new Html("button")
+    .text("Close")
+    .appendTo(buttonContainer)
+    .styleJs({ width: "100%" })
+    .on("click", () => {
+      if (cleanupLocalStream) cleanupLocalStream();
+      closePanel(panel);
+    });
+
+  const uiElements = [[closeButton.elm]];
+  const uiType = "horizontal";
+  const callback = (evt) => {
+    if (evt === "back") {
+      if (cleanupLocalStream) cleanupLocalStream();
+      closePanel(panel);
+    }
+  };
+  overlayState.panels.push({
+    panel,
+    ui: { type: uiType, lists: uiElements, callback },
+  });
+  Ui.init(activeGame.pid, uiType, uiElements, callback);
+};
+
 const showProfilePanel = (friend) => {
   Sfx.playSfx("deck_ui_navigation.wav");
   const panel = createPanel(overlayState.container, {
@@ -614,8 +1114,13 @@ let onOverlayOpen = async (e) => {
   let buttonStates = {
     inParty: () => {
       return new Promise((resolve, reject) => {
-        new Html("button")
-          .html(`${icons.mute} <span>Mute</span>`)
+        // Mute button with toggle functionality
+        muteButton = new Html("button")
+          .html(
+            isMuted
+              ? `${icons.mute} <span>Unmute</span>`
+              : `${icons.unmute} <span>Mute</span>`,
+          )
           .appendTo(partyButtons)
           .styleJs({
             minWidth: "3.25rem",
@@ -625,7 +1130,56 @@ let onOverlayOpen = async (e) => {
             justifyContent: "center",
             padding: "0.8rem",
             gap: "5px",
+          })
+          .on("click", () => {
+            if (activeRoom && activeRoom.localParticipant) {
+              isMuted = !isMuted;
+              activeRoom.localParticipant.setMicrophoneEnabled(!isMuted);
+              participantMuteStates[info.name] = {
+                muted: isMuted,
+                speaking: false,
+              };
+              if (participantButtons.has(info.name)) {
+                const btn = participantButtons.get(info.name);
+                btn.text(isMuted ? `${info.name} (Muted)` : info.name);
+              }
+              muteButton.html(
+                isMuted
+                  ? `${icons.mute} <span>Unmute</span>`
+                  : `${icons.unmute} <span>Mute</span>`,
+              );
+            }
           });
+
+        // Camera button (off by default for privacy)
+        cameraButton = new Html("button")
+          .html(
+            isCameraOn
+              ? `${icons.cameraOn} <span>Camera On</span>`
+              : `${icons.cameraOff} <span>Camera Off</span>`,
+          )
+          .appendTo(partyButtons)
+          .styleJs({
+            minWidth: "3.25rem",
+            height: "3.25rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0.8rem",
+            gap: "5px",
+          })
+          .on("click", () => {
+            if (activeRoom && activeRoom.localParticipant) {
+              isCameraOn = !isCameraOn;
+              activeRoom.localParticipant.setCameraEnabled(isCameraOn);
+              cameraButton.html(
+                isCameraOn
+                  ? `${icons.cameraOn} <span>Camera On</span>`
+                  : `${icons.cameraOff} <span>Camera Off</span>`,
+              );
+            }
+          });
+
         let settingsButton = new Html("button")
           .html(`${icons.settings} <span>Settings</span>`)
           .appendTo(partyButtons)
@@ -683,7 +1237,7 @@ let onOverlayOpen = async (e) => {
                   })
                   .on("click", () => {
                     row.classOff("over");
-                    showProfilePanel(participant);
+                    showParticipantVideoPanel(participant.name);
                   })
                   .on(
                     "mouseenter",
@@ -701,21 +1255,22 @@ let onOverlayOpen = async (e) => {
                   flexGrow: "1",
                 });
 
-                new Html("span")
+                let participantName = new Html("span")
                   .text(participant.name)
                   .styleJs({ fontSize: "1rem", fontWeight: "500" })
                   .appendTo(nameContainer);
 
-                new Html("div").appendTo(row).styleJs({
-                  width: "0.6em",
-                  height: "0.6em",
-                  borderColor: "#adb5bd",
-                  borderStyle: "solid",
-                  borderWidth: "0.15em 0.15em 0 0",
-                  transform: "rotate(45deg)",
-                });
+                if (participant.name in participantMuteStates) {
+                  if (participantMuteStates[participant.name].speaking) {
+                    participantName.text(`${participant.name} (Speaking)`);
+                  }
+                  if (participantMuteStates[participant.name].muted) {
+                    participantName.text(`${participant.name} (Muted)`);
+                  }
+                }
 
                 uiElements.push([row.elm]);
+                participantButtons.set(participant.name, participantName);
               });
             } else {
               new Html("div")
@@ -931,7 +1486,9 @@ const pkg = {
     root = Root;
   },
   data: {
-    subscribe(token) {
+    async subscribe(token) {
+      info = await Users.getUserInfo(await root.Security.getToken());
+      console.log(info);
       socket = io(partyServer, {
         auth: { token },
       });
@@ -1050,8 +1607,7 @@ const pkg = {
               { partyName, hostCode },
               async (data) => {
                 activeRoom = new LivekitClient.Room();
-                await activeRoom.connect(livekitServer, data.livekitToken);
-                console.log("connected to room", activeRoom.name);
+                handleLiveKitRoom(livekitServer, data.livekitToken);
               },
             );
           }
@@ -1204,7 +1760,6 @@ const pkg = {
         let userPeerConn = null;
 
         peer.on("open", async () => {
-          let info = await Users.getUserInfo(await root.Security.getToken());
           const conn = peer.connect(invite.info.hostCode);
           conn.on("open", () => {
             conn.send({ token: invite.inviteToken, info });
@@ -1253,8 +1808,7 @@ const pkg = {
                 };
 
                 activeRoom = new LivekitClient.Room();
-                await activeRoom.connect(livekitServer, invite.livekitToken);
-                console.log("connected to room", activeRoom.name);
+                handleLiveKitRoom(livekitServer, invite.livekitToken);
 
                 resolve({
                   send: (msg) => {
@@ -1322,33 +1876,3 @@ const pkg = {
 };
 
 export default pkg;
-
-function endPartyInternal(partyName, hostCode, participant = false) {
-  if (activeParty && !activeParty._ended) {
-    activeParty._ended = true;
-    if (activeParty.peer && !activeParty.peer.destroyed) {
-      activeParty.peer.destroy();
-    }
-    if (activeRoom) {
-      activeRoom.disconnect();
-    }
-    if (socket) {
-      if (!participant) {
-        socket.emit("endParty", hostCode);
-      } else {
-        socket.emit("participantLeave", hostCode);
-      }
-    }
-    showSocialHubToast({
-      icon: icons.users,
-      title: participant ? "You left the party" : "Party ended",
-      subtitle: participant
-        ? `You left <strong>${partyName}</strong>`
-        : `<strong>${partyName}</strong> has ended.`,
-      hint: "",
-    });
-    console.log(`[PARTIES] Ended party: ${hostCode}`);
-    activeParty = null;
-    activeGame.activeParty = null;
-  }
-}
