@@ -49,7 +49,7 @@ const pkg = {
           alert("hallo every nyan");
         }),
         new Html("button").text("create diddy party").on("click", async (e) => {
-          curParty = await Parties.createParty("diddy party");
+          curParty = await Parties.createParty("FREAKOFF TOURNAMENT");
           console.log(curParty);
         }),
         new Html("button")

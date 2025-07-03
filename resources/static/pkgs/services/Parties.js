@@ -255,13 +255,9 @@ function endPartyInternal(partyName, hostCode, participant = false) {
       activeParty.peer.destroy();
     }
     if (activeRoom) {
-      if (activeRoom.localParticipant) {
-        isCameraOn = false;
-        isMuted = false;
-        activeRoom.localParticipant.setMicrophoneEnabled(false);
-        activeRoom.localParticipant.setCameraEnabled(false);
-      }
       activeRoom.disconnect();
+      isCameraOn = false;
+      isMuted = false;
     }
     if (socket) {
       if (!participant) {
@@ -282,6 +278,7 @@ function endPartyInternal(partyName, hostCode, participant = false) {
     console.log(`[PARTIES] Ended party: ${hostCode}`);
     activeParty = null;
     activeGame.activeParty = null;
+    activeRoom = null;
   }
 }
 
