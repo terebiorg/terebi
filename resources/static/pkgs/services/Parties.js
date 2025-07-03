@@ -1213,11 +1213,7 @@ let onOverlayOpen = async (e) => {
 
   if (activeGame.activeParty) {
     muteButton = new Html("button")
-      .html(
-        isMuted
-          ? `${icons.mute} <span>Unmute</span>`
-          : `${icons.unmute} <span>Mute</span>`,
-      )
+      .html(isMuted ? `${icons.mute}` : `${icons.unmute}`)
       .appendTo(partyButtons)
       .styleJs({
         minWidth: "3.25rem",
@@ -1240,20 +1236,22 @@ let onOverlayOpen = async (e) => {
             const btn = participantButtons.get(info.name);
             btn.text(isMuted ? `${info.name} (Muted)` : info.name);
           }
-          muteButton.html(
-            isMuted
-              ? `${icons.mute} <span>Unmute</span>`
-              : `${icons.unmute} <span>Mute</span>`,
-          );
+          showSocialHubToast({
+            icon: isMuted ? icons.mute : icons.unmute,
+            title: `Microphone ${isMuted ? "muted" : "unmuted"}`,
+            subtitle: isMuted
+              ? "Participants no longer hear you."
+              : "Participants can now hear you.",
+            hint: `Open the <strong>Social Hub</strong> to ${
+              isMuted ? "unmute" : "mute"
+            }`,
+          });
+          muteButton.html(isMuted ? `${icons.mute}` : `${icons.unmute}`);
         }
       });
 
     cameraButton = new Html("button")
-      .html(
-        isCameraOn
-          ? `${icons.cameraOn} <span>Camera On</span>`
-          : `${icons.cameraOff} <span>Camera Off</span>`,
-      )
+      .html(isCameraOn ? `${icons.cameraOn}` : `${icons.cameraOff}`)
       .appendTo(partyButtons)
       .styleJs({
         minWidth: "3.25rem",
@@ -1268,17 +1266,25 @@ let onOverlayOpen = async (e) => {
         if (activeRoom && activeRoom.localParticipant) {
           isCameraOn = !isCameraOn;
           activeRoom.localParticipant.setCameraEnabled(isCameraOn);
+          showSocialHubToast({
+            icon: isCameraOn ? icons.cameraOn : icons.cameraOff,
+            title: `Camera ${isCameraOn ? "turned on" : "turned off"}`,
+            subtitle: isCameraOn
+              ? "Participants can now see your camera."
+              : "Your camera is hidden from participants.",
+            hint: `Open the <strong>Social Hub</strong> to ${
+              isCameraOn ? "turn off" : "turn on"
+            }`,
+          });
           cameraButton.html(
-            isCameraOn
-              ? `${icons.cameraOn} <span>Camera On</span>`
-              : `${icons.cameraOff} <span>Camera Off</span>`,
+            isCameraOn ? `${icons.cameraOn}` : `${icons.cameraOff}`,
           );
         }
       });
   }
 
   let settingsButton = new Html("button")
-    .html(`${icons.settings} <span>Settings</span>`)
+    .html(`${icons.settings}`)
     .appendTo(partyButtons)
     .styleJs({
       minWidth: "3.25rem",
