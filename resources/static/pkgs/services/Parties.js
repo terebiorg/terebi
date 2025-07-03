@@ -251,20 +251,23 @@ async function handleLiveKitRoom(server, token) {
 function endPartyInternal(partyName, hostCode, participant = false) {
   if (activeParty && !activeParty._ended) {
     activeParty._ended = true;
-    if (activeParty.peer && !activeParty.peer.destroyed) {
-      activeParty.peer.destroy();
-    }
-    if (activeRoom) {
-      activeRoom.disconnect();
-      isCameraOn = false;
-      isMuted = false;
-    }
+
     if (socket) {
       if (!participant) {
         socket.emit("endParty", hostCode);
       } else {
         socket.emit("participantLeave", hostCode);
       }
+    }
+
+    if (activeParty.peer && !activeParty.peer.destroyed) {
+      activeParty.peer.destroy();
+    }
+
+    if (activeRoom) {
+      activeRoom.disconnect();
+      isCameraOn = false;
+      isMuted = false;
     }
 
     showSocialHubToast({
@@ -670,7 +673,6 @@ const showSettingsPanel = async () => {
     }
   };
 
-  // Listen for AV input changes and update both preview and LiveKit
   async function onAudioUpdate() {
     await startPreview();
     await updateLiveKitDevices();
@@ -723,14 +725,13 @@ const showParticipantVideoPanel = (participantName) => {
 
   let stream;
   let cleanupLocalStream = null;
-  let videoTrackListener = null; // <-- add
+  let videoTrackListener = null;
 
   const panel = createPanel(overlayState.container, {
     width: "45%",
     height: "auto",
     onClose: () => {
       if (cleanupLocalStream) cleanupLocalStream();
-      // Remove the event listener if still present
       if (videoTrackListener) {
         document.removeEventListener(
           "CherryTree.Livekit.Participant.TrackSubscribed",
@@ -866,7 +867,6 @@ const showParticipantVideoPanel = (participantName) => {
         .text("No video stream available")
         .style({ display: "flex" });
 
-      // --- Listen for video track subscribe event ---
       videoTrackListener = (evt) => {
         const { participant, publication } = evt.detail || {};
         if (
@@ -875,7 +875,6 @@ const showParticipantVideoPanel = (participantName) => {
           publication &&
           publication.kind === "video"
         ) {
-          // Try to get the stream again
           const newStream = videoStreams.get(participantName);
           if (newStream) {
             videoPreview.elm.srcObject = newStream;
@@ -895,7 +894,6 @@ const showParticipantVideoPanel = (participantName) => {
               },
               { once: true },
             );
-            // Remove listener after first use
             document.removeEventListener(
               "CherryTree.Livekit.Participant.TrackSubscribed",
               videoTrackListener,
@@ -908,7 +906,6 @@ const showParticipantVideoPanel = (participantName) => {
         "CherryTree.Livekit.Participant.TrackSubscribed",
         videoTrackListener,
       );
-      // --- end listener setup ---
     }
   }
 
@@ -1111,7 +1108,6 @@ let onOverlayOpen = async (e) => {
   let buttonStates = {
     inParty: () => {
       return new Promise((resolve, reject) => {
-        // Mute button with toggle functionality
         muteButton = new Html("button")
           .html(
             isMuted
@@ -1148,7 +1144,6 @@ let onOverlayOpen = async (e) => {
             }
           });
 
-        // Camera button (off by default for privacy)
         cameraButton = new Html("button")
           .html(
             isCameraOn
@@ -1421,8 +1416,6 @@ let onOverlayOpen = async (e) => {
       });
   }
 
-  // --- THIS IS THE FIX ---
-  // We replace the simple callback with the smarter, scrolling-aware one.
   const callback = (evt) => {
     console.log(evt);
     lastXY.x = evt.x;
@@ -1432,10 +1425,7 @@ let onOverlayOpen = async (e) => {
       return;
     }
 
-    // On any other navigation event ('up', 'down', etc.), we run the scroll logic.
-    // We use a short timeout to wait for the UI library to apply the '.over' class to the newly focused element.
     setTimeout(() => {
-      // Find the currently focused element within our panel.
       const focusedElm = panel.elm.querySelector(".over");
 
       if (focusedElm) {
@@ -1508,6 +1498,64 @@ const pkg = {
           subtitle: `${data.host.name} has invited you to <strong>${data.info.partyName}</strong>!`,
           hint: "Go to the <strong>Friends</strong> menu to accept!",
         });
+      });
+      socket.on("partyJoin", (data) => {
+        showSocialHubToast({
+          icon: icons.users,
+          title: "Say hi!",
+          subtitle: `${data.user.name} just joined the party.`,
+          hint: "Chat with them by opening the <strong>Social Hub</strong>!",
+        });
+      });
+      socket.on("partyLeave", (data) => {
+        showSocialHubToast({
+          icon: icons.users,
+          title: "じゃあね！",
+          subtitle: `${data.user.name} just left the party.`,
+          hint: "They can join back as long as the party is active.",
+        });
+
+        if (
+          activeParty &&
+          activeParty.peer &&
+          activeParty.hostCode &&
+          activeParty.peer.id === activeParty.hostCode
+        ) {
+          const peerIndex = activeParty.peers.findIndex(
+            (p) => p.userInfo.name === data.user.name,
+          );
+
+          if (peerIndex > -1) {
+            const peerToRemove = activeParty.peers[peerIndex];
+            console.log(
+              `[PARTIES] Peer ${peerToRemove.userInfo.name} left. Cleaning up.`,
+            );
+
+            if (peerToRemove.connection) {
+              peerToRemove.connection.close();
+            }
+            if (peerToRemove.peer && !peerToRemove.peer.destroyed) {
+              peerToRemove.peer.destroy();
+            }
+
+            activeParty.peers.splice(peerIndex, 1);
+
+            document.dispatchEvent(
+              new CustomEvent("CherryTree.Party.PeerDisconnected", {
+                detail: {
+                  userInfo: peerToRemove.userInfo,
+                  peerCode: peerToRemove.peerCode,
+                },
+              }),
+            );
+          }
+        }
+      });
+      socket.on("partyEnd", (data) => {
+        console.log("party end", data);
+        if (!activeParty._ended) {
+          endPartyInternal(activeParty.partyName, activeParty.hostCode);
+        }
       });
     },
     getPartyList() {
@@ -1674,12 +1722,6 @@ const pkg = {
                       peerCode,
                       userInfo: joinData.info,
                       connection: userConn,
-                    });
-                    showSocialHubToast({
-                      icon: icons.users,
-                      title: "Joined Party!",
-                      subtitle: `${joinData.info.name} joined your party.`,
-                      hint: "Chat with them by opening the <strong>Social Hub</strong>!",
                     });
                     document.dispatchEvent(
                       new CustomEvent("CherryTree.Party.PeerConnected", {
