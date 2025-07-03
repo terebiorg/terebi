@@ -937,7 +937,7 @@ const showParticipantVideoPanel = (participantName) => {
   Ui.init(activeGame.pid, uiType, uiElements, callback);
 };
 
-const showProfilePanel = (friend) => {
+const showProfilePanel = (friend, onInvite) => {
   Sfx.playSfx("deck_ui_navigation.wav");
   const panel = createPanel(overlayState.container, {
     width: "28%",
@@ -1006,6 +1006,22 @@ const showProfilePanel = (friend) => {
           });
         }
         Sfx.playSfx("deck_ui_launch_game.wav");
+        inviteButton.text("Invited").elm.disabled = true;
+        showSocialHubToast({
+          icon: icons.users,
+          title: "Invite Sent",
+          subtitle: `An invitation has been sent to <strong>${friend.name}</strong>.`,
+          hint: "They will appear in your party list.",
+        });
+
+        if (onInvite) {
+          const pos = Ui.get(activeGame.pid)?.pos || { x: 0, y: 0 };
+          onInvite(friend, pos);
+        }
+
+        setTimeout(() => {
+          closePanel(panel);
+        }, 300);
       });
     uiElements.push([inviteButton.elm]);
   }
@@ -1063,13 +1079,102 @@ let onOverlayOpen = async (e) => {
     zIndex: "1000",
   });
 
-  const panel = createPanel(overlayState.container, { width: "30%" });
+  const panel = createPanel(overlayState.container, { width: "32%" });
   const ws = root.Security.getSecureVariable("CHERRY_TREE_WS");
   const friends = ws
     ? (await ws.sendMessage({ type: "get-friends" })).result
     : [];
   const uiType = "horizontal";
   let uiElements = [];
+  let participantListContainer = null;
+  let noParticipantsMessage = null;
+  let participantElementCount = 0;
+
+  const callback = (evt) => {
+    console.log(evt);
+    lastXY.x = evt.x;
+    lastXY.y = evt.y;
+    if (evt === "back") {
+      closePanel(panel);
+      return;
+    }
+
+    setTimeout(() => {
+      const focusedElm = panel.elm.querySelector(".over");
+
+      if (focusedElm) {
+        const topPos = focusedElm.offsetTop;
+        const panelHeight = panel.elm.clientHeight;
+        const elmHeight = focusedElm.offsetHeight;
+
+        const newScrollTop = topPos - panelHeight / 2 + elmHeight / 2;
+
+        panel.elm.scrollTo({
+          top: newScrollTop,
+          behavior: "smooth",
+        });
+      }
+    }, 50);
+  };
+
+  const createParticipantRowElement = (participant) => {
+    const row = new Html("button")
+      .styleJs({
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        padding: "0.75rem 1rem",
+        borderRadius: "0.5rem",
+        background: "rgba(0,0,0,0.2)",
+        transition: "all 0.2s ease",
+      })
+      .on("click", () => {
+        row.classOff("over");
+        showParticipantVideoPanel(participant.name);
+      })
+      .on("mouseenter", (e) => (e.target.style.background = "rgba(0,0,0,0.4)"))
+      .on("mouseleave", (e) => (e.target.style.background = "rgba(0,0,0,0.2)"));
+
+    const nameContainer = new Html("div").appendTo(row).styleJs({
+      display: "flex",
+      alignItems: "center",
+      gap: "0.75rem",
+      flexGrow: "1",
+    });
+
+    let participantName = new Html("span")
+      .text(participant.name)
+      .styleJs({ fontSize: "1rem", fontWeight: "500" })
+      .appendTo(nameContainer);
+
+    if (participant.name in participantMuteStates) {
+      if (participantMuteStates[participant.name].speaking) {
+        participantName.text(`${participant.name} (Speaking)`);
+      }
+      if (participantMuteStates[participant.name].muted) {
+        participantName.text(`${participant.name} (Muted)`);
+      }
+    }
+
+    participantButtons.set(participant.name, participantName);
+    return row;
+  };
+
+  const addParticipantToUI = (participant, originalPos) => {
+    if (noParticipantsMessage) {
+      noParticipantsMessage.cleanup();
+      noParticipantsMessage = null;
+    }
+    const newRow = createParticipantRowElement(participant);
+    participantListContainer.append(newRow);
+
+    const insertionIndex = 1 + participantElementCount; // After party controls
+    uiElements.splice(insertionIndex, 0, [newRow.elm]);
+    participantElementCount++;
+
+    Ui.init(activeGame.pid, uiType, uiElements, callback);
+    Ui.updatePos(activeGame.pid, originalPos);
+  };
 
   const headingContents = new Html("div")
     .appendTo(panel)
@@ -1105,224 +1210,144 @@ let onOverlayOpen = async (e) => {
     gap: "10px",
   });
 
-  let buttonStates = {
-    inParty: () => {
-      return new Promise((resolve, reject) => {
-        muteButton = new Html("button")
-          .html(
+  if (activeGame.activeParty) {
+    muteButton = new Html("button")
+      .html(
+        isMuted
+          ? `${icons.mute} <span>Unmute</span>`
+          : `${icons.unmute} <span>Mute</span>`,
+      )
+      .appendTo(partyButtons)
+      .styleJs({
+        minWidth: "3.25rem",
+        height: "3.25rem",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0.8rem",
+        gap: "5px",
+      })
+      .on("click", () => {
+        if (activeRoom && activeRoom.localParticipant) {
+          isMuted = !isMuted;
+          activeRoom.localParticipant.setMicrophoneEnabled(!isMuted);
+          participantMuteStates[info.name] = {
+            muted: isMuted,
+            speaking: false,
+          };
+          if (participantButtons.has(info.name)) {
+            const btn = participantButtons.get(info.name);
+            btn.text(isMuted ? `${info.name} (Muted)` : info.name);
+          }
+          muteButton.html(
             isMuted
               ? `${icons.mute} <span>Unmute</span>`
               : `${icons.unmute} <span>Mute</span>`,
-          )
-          .appendTo(partyButtons)
-          .styleJs({
-            minWidth: "3.25rem",
-            height: "3.25rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0.8rem",
-            gap: "5px",
-          })
-          .on("click", () => {
-            if (activeRoom && activeRoom.localParticipant) {
-              isMuted = !isMuted;
-              activeRoom.localParticipant.setMicrophoneEnabled(!isMuted);
-              participantMuteStates[info.name] = {
-                muted: isMuted,
-                speaking: false,
-              };
-              if (participantButtons.has(info.name)) {
-                const btn = participantButtons.get(info.name);
-                btn.text(isMuted ? `${info.name} (Muted)` : info.name);
-              }
-              muteButton.html(
-                isMuted
-                  ? `${icons.mute} <span>Unmute</span>`
-                  : `${icons.unmute} <span>Mute</span>`,
-              );
-            }
-          });
+          );
+        }
+      });
 
-        cameraButton = new Html("button")
-          .html(
+    cameraButton = new Html("button")
+      .html(
+        isCameraOn
+          ? `${icons.cameraOn} <span>Camera On</span>`
+          : `${icons.cameraOff} <span>Camera Off</span>`,
+      )
+      .appendTo(partyButtons)
+      .styleJs({
+        minWidth: "3.25rem",
+        height: "3.25rem",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0.8rem",
+        gap: "5px",
+      })
+      .on("click", () => {
+        if (activeRoom && activeRoom.localParticipant) {
+          isCameraOn = !isCameraOn;
+          activeRoom.localParticipant.setCameraEnabled(isCameraOn);
+          cameraButton.html(
             isCameraOn
               ? `${icons.cameraOn} <span>Camera On</span>`
               : `${icons.cameraOff} <span>Camera Off</span>`,
-          )
-          .appendTo(partyButtons)
-          .styleJs({
-            minWidth: "3.25rem",
-            height: "3.25rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0.8rem",
-            gap: "5px",
-          })
-          .on("click", () => {
-            if (activeRoom && activeRoom.localParticipant) {
-              isCameraOn = !isCameraOn;
-              activeRoom.localParticipant.setCameraEnabled(isCameraOn);
-              cameraButton.html(
-                isCameraOn
-                  ? `${icons.cameraOn} <span>Camera On</span>`
-                  : `${icons.cameraOff} <span>Camera Off</span>`,
-              );
-            }
-          });
-
-        let settingsButton = new Html("button")
-          .html(`${icons.settings} <span>Settings</span>`)
-          .appendTo(partyButtons)
-          .styleJs({
-            minWidth: "3.25rem",
-            height: "3.25rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0.8rem",
-            gap: "5px",
-          })
-          .on("click", () => {
-            settingsButton.classOff("over");
-            showSettingsPanel();
-          });
-
-        new Html("div").appendTo(panel).styleJs({
-          height: "1px",
-          width: "100%",
-          backgroundColor: "rgba(255,255,255,0.1)",
-          margin: "1rem 0",
-        });
-
-        new Html("h2").text("Your party").appendTo(panel).styleJs({
-          paddingBottom: "0.5rem",
-          textShadow: "0 1px 2px rgba(0,0,0,0.4)",
-          borderBottom: "1px solid rgba(255,255,255,0.1)",
-          marginBottom: "1rem",
-        });
-        if (socket) {
-          socket.emit("partyInfo", activeParty.hostCode, (data) => {
-            console.log("Got party data", data);
-            let partyData = data.party;
-            if (partyData.participants.length > 0) {
-              const participantListContainer = new Html("div")
-                .class("flex-list")
-                .styleJs({
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.5rem",
-                })
-                .appendTo(panel);
-              partyData.participants.forEach((participant) => {
-                const row = new Html("button")
-                  .appendTo(participantListContainer)
-                  .styleJs({
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "0.75rem 1rem",
-                    borderRadius: "0.5rem",
-                    background: "rgba(0,0,0,0.2)",
-                    transition: "all 0.2s ease",
-                  })
-                  .on("click", () => {
-                    row.classOff("over");
-                    showParticipantVideoPanel(participant.name);
-                  })
-                  .on(
-                    "mouseenter",
-                    (e) => (e.target.style.background = "rgba(0,0,0,0.4)"),
-                  )
-                  .on(
-                    "mouseleave",
-                    (e) => (e.target.style.background = "rgba(0,0,0,0.2)"),
-                  );
-
-                const nameContainer = new Html("div").appendTo(row).styleJs({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.75rem",
-                  flexGrow: "1",
-                });
-
-                let participantName = new Html("span")
-                  .text(participant.name)
-                  .styleJs({ fontSize: "1rem", fontWeight: "500" })
-                  .appendTo(nameContainer);
-
-                if (participant.name in participantMuteStates) {
-                  if (participantMuteStates[participant.name].speaking) {
-                    participantName.text(`${participant.name} (Speaking)`);
-                  }
-                  if (participantMuteStates[participant.name].muted) {
-                    participantName.text(`${participant.name} (Muted)`);
-                  }
-                }
-
-                uiElements.push([row.elm]);
-                participantButtons.set(participant.name, participantName);
-              });
-            } else {
-              new Html("div")
-                .text("Invite some people!")
-                .appendTo(panel)
-                .styleJs({
-                  width: "100%",
-                  textAlign: "center",
-                  color: "#adb5bd",
-                  padding: "1rem 0",
-                  fontStyle: "italic",
-                });
-            }
-            resolve();
-          });
+          );
         }
       });
-    },
-    notInParty: () => {
-      return new Promise((resolve, reject) => {
-        // new Html("button")
-        //   .html(`${icons.plus} <span>Create</span>`)
-        //   .appendTo(partyButtons)
-        //   .styleJs({
-        //     minWidth: "3.25rem",
-        //     height: "3.25rem",
-        //     display: "flex",
-        //     alignItems: "center",
-        //     justifyContent: "center",
-        //     padding: "0.8rem",
-        //     gap: "5px",
-        //   });
-        let settingsButton = new Html("button")
-          .html(`${icons.settings} <span>Settings</span>`)
-          .appendTo(partyButtons)
-          .styleJs({
-            minWidth: "3.25rem",
-            height: "3.25rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0.8rem",
-            gap: "5px",
-          })
-          .on("click", () => {
-            settingsButton.classOff("over");
-            showSettingsPanel();
-          });
+  }
 
-        resolve();
-      });
-    },
-  };
+  let settingsButton = new Html("button")
+    .html(`${icons.settings} <span>Settings</span>`)
+    .appendTo(partyButtons)
+    .styleJs({
+      minWidth: "3.25rem",
+      height: "3.25rem",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "0.8rem",
+      gap: "5px",
+    })
+    .on("click", () => {
+      settingsButton.classOff("over");
+      showSettingsPanel();
+    });
 
   uiElements.push(partyButtons.elm.children);
 
   if (activeGame.activeParty) {
-    await buttonStates.inParty();
-  } else {
-    await buttonStates.notInParty();
+    new Html("div").appendTo(panel).styleJs({
+      height: "1px",
+      width: "100%",
+      backgroundColor: "rgba(255,255,255,0.1)",
+      margin: "1rem 0",
+    });
+    new Html("h2").text("Your party").appendTo(panel).styleJs({
+      paddingBottom: "0.5rem",
+      textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+      borderBottom: "1px solid rgba(255,255,255,0.1)",
+      marginBottom: "1rem",
+    });
+    participantListContainer = new Html("div")
+      .class("flex-list")
+      .styleJs({
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.5rem",
+      })
+      .appendTo(panel);
+
+    const partyParticipants = await new Promise((resolve) => {
+      if (socket) {
+        socket.emit("partyInfo", activeParty.hostCode, (data) => {
+          let participantElements = [];
+          if (data && data.party && data.party.participants.length > 0) {
+            participantElementCount = data.party.participants.length;
+            data.party.participants.forEach((participant) => {
+              const row = createParticipantRowElement(participant);
+              row.appendTo(participantListContainer);
+              participantElements.push([row.elm]); 
+            });
+          } else {
+            noParticipantsMessage = new Html("div")
+              .text("Invite some people!")
+              .appendTo(participantListContainer)
+              .styleJs({
+                width: "100%",
+                textAlign: "center",
+                color: "#adb5bd",
+                padding: "1rem 0",
+                fontStyle: "italic",
+              });
+          }
+          resolve(participantElements);
+        });
+      } else {
+        resolve([]);
+      }
+    });
+
+    uiElements.push(...partyParticipants);
   }
 
   new Html("div").appendTo(panel).styleJs({
@@ -1358,7 +1383,7 @@ let onOverlayOpen = async (e) => {
         })
         .on("click", () => {
           row.classOff("over");
-          showProfilePanel(friend);
+          showProfilePanel(friend, addParticipantToUI);
         })
         .on(
           "mouseenter",
@@ -1415,33 +1440,6 @@ let onOverlayOpen = async (e) => {
         fontStyle: "italic",
       });
   }
-
-  const callback = (evt) => {
-    console.log(evt);
-    lastXY.x = evt.x;
-    lastXY.y = evt.y;
-    if (evt === "back") {
-      closePanel(panel);
-      return;
-    }
-
-    setTimeout(() => {
-      const focusedElm = panel.elm.querySelector(".over");
-
-      if (focusedElm) {
-        const topPos = focusedElm.offsetTop;
-        const panelHeight = panel.elm.clientHeight;
-        const elmHeight = focusedElm.offsetHeight;
-
-        const newScrollTop = topPos - panelHeight / 2 + elmHeight / 2;
-
-        panel.elm.scrollTo({
-          top: newScrollTop,
-          behavior: "smooth",
-        });
-      }
-    }, 50);
-  };
 
   overlayState.panels.push({
     panel,
@@ -1553,7 +1551,7 @@ const pkg = {
       });
       socket.on("partyEnd", (data) => {
         console.log("party end", data);
-        if (!activeParty._ended) {
+        if (activeParty && !activeParty._ended) {
           endPartyInternal(activeParty.partyName, activeParty.hostCode);
         }
       });
