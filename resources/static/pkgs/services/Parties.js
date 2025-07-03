@@ -1015,7 +1015,8 @@ const showProfilePanel = (friend, onInvite) => {
         });
 
         if (onInvite) {
-          const pos = Ui.get(activeGame.pid)?.pos || { x: 0, y: 0 };
+          lastXY.y++;
+          const pos = lastXY;
           onInvite(friend, pos);
         }
 
@@ -1326,7 +1327,7 @@ let onOverlayOpen = async (e) => {
             data.party.participants.forEach((participant) => {
               const row = createParticipantRowElement(participant);
               row.appendTo(participantListContainer);
-              participantElements.push([row.elm]); 
+              participantElements.push([row.elm]);
             });
           } else {
             noParticipantsMessage = new Html("div")
