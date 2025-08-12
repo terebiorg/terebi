@@ -201,29 +201,6 @@ const pkg = {
             "broadcastLink",
           );
           let givenUrl = responseData["broadcastLink"];
-          console.log(givenUrl);
-          // responseData["broadcastLink"] = null;
-          // if (
-          //   !givenUrl.startsWith("https://") ||
-          //   !givenUrl.startsWith("http://")
-          // ) {
-          //   console.log("HOW THE FUCK");
-          //   broadcastLocation.text("No file or URL selected");
-          //   responseData["broadcastLink"] = null;
-          //   return await Root.Libs.Modal.Show({
-          //     parent: wrapper,
-          //     pid: Root.Pid,
-          //     title: "Invalid URL",
-          //     description: "The URL you entered was invalid.",
-          //     buttons: [
-          //       {
-          //         type: "primary",
-          //         text: "OK",
-          //       },
-          //     ],
-          //   });
-          // }
-
           const result = await fetch(givenUrl).catch((_) => undefined);
 
           if (!result.ok) {
