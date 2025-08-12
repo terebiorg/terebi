@@ -199,28 +199,32 @@ const pkg = {
             broadcastLocation.elm,
             false,
             "broadcastLink",
-            "Location: ",
           );
-          let url = responseData["broadcastLink"];
-          responseData["broadcastLink"] = null;
-          if (!url.startsWith("https://") || !url.startsWith("http://")) {
-            broadcastLocation.text("No file or URL selected");
-            responseData["broadcastLink"] = null;
-            return await Root.Libs.Modal.Show({
-              parent: wrapper,
-              pid: Root.Pid,
-              title: "Invalid URL",
-              description: "The URL you entered was invalid.",
-              buttons: [
-                {
-                  type: "primary",
-                  text: "OK",
-                },
-              ],
-            });
-          }
+          let givenUrl = responseData["broadcastLink"];
+          console.log(givenUrl);
+          // responseData["broadcastLink"] = null;
+          // if (
+          //   !givenUrl.startsWith("https://") ||
+          //   !givenUrl.startsWith("http://")
+          // ) {
+          //   console.log("HOW THE FUCK");
+          //   broadcastLocation.text("No file or URL selected");
+          //   responseData["broadcastLink"] = null;
+          //   return await Root.Libs.Modal.Show({
+          //     parent: wrapper,
+          //     pid: Root.Pid,
+          //     title: "Invalid URL",
+          //     description: "The URL you entered was invalid.",
+          //     buttons: [
+          //       {
+          //         type: "primary",
+          //         text: "OK",
+          //       },
+          //     ],
+          //   });
+          // }
 
-          const result = await fetch(url).catch((_) => undefined);
+          const result = await fetch(givenUrl).catch((_) => undefined);
 
           if (!result.ok) {
             return alert("Server response for file was not OK.");
@@ -230,7 +234,8 @@ const pkg = {
           }
 
           responseData.broadcastIsFile = false;
-          await attemptParseM3U(await result.text(), url);
+          selectedFile = givenUrl;
+          await attemptParseM3U(await result.text(), givenUrl);
         }),
         new Html("button").text("Add broadcast").on("click", async (e) => {
           if (selectedFile == null) {
