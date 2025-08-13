@@ -28,6 +28,7 @@
   },
   "homepage": "./",
   "dependencies": {
+    "@websr/websr": "^0.0.11",
     "@xhayper/discord-rpc": "^1.2.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

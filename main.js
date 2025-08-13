@@ -39,6 +39,9 @@ server.use(express.static("resources/static"));
 server.use(express.json());
 server.use(cors());
 
+app.commandLine.appendSwitch("enable-features", "WebGPU");
+app.commandLine.appendSwitch("enable-unsafe-webgpu");
+
 const createWindow = () => {
   const win = new BrowserWindow({
     width: 1280,

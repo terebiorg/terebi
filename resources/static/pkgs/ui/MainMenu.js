@@ -697,7 +697,7 @@ const pkg = {
               new Html("span").class("title").text(party.host.name),
             )
             .on("click", () => {
-              alert("Not implemented yet!");
+              alert(`Launching ${party.info.packageName}...`);
             });
           let trimmed =
             party.info.partyName.length > 20

@@ -4,14 +4,11 @@ import Html from "/libs/html.js";
 //   CaptionsRenderer,
 // } from "/libs/media-captions/dist/prod.js";
 import "../../libs/hls.min.js";
-import "../../libs/websr/dist/websr.js"; // Import WebSR
 
 // console.log(CaptionsRenderer);
 
 let wrapper, Ui, Pid, Sfx, volumeUpdate;
 let hls;
-let websr; // Moved to shared scope for access in start() and end()
-let handleResize;
 
 let brightness = localStorage.getItem("videoBrightness")
   ? parseInt(localStorage.getItem("videoBrightness"))
@@ -26,7 +23,6 @@ let saturation = localStorage.getItem("videoSaturation")
 let hlsPlayer;
 
 const Hls = window.Hls;
-const WebSR = window.WebSR;
 
 const pkg = {
   name: "Video Player",
@@ -61,7 +57,7 @@ const pkg = {
       }
     }
 
-    let videoElm, captionsElm, canvasElm;
+    let videoElm, captionsElm;
     let invButton;
     let top;
     let bottom;
@@ -85,14 +81,6 @@ const pkg = {
       };
     }
 
-    handleResize = () => {
-      if (canvasElm && canvasElm.elm && websr) {
-        canvasElm.elm.width = canvasElm.elm.clientWidth;
-        canvasElm.elm.height = canvasElm.elm.clientHeight;
-      }
-    };
-    window.addEventListener("resize", handleResize);
-
     function createVideoElement(path) {
       let url = path;
       let filterStr = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
@@ -105,17 +93,9 @@ const pkg = {
           height: "100%",
           position: "absolute",
           objectFit: "fill",
-          filter: filterStr, // Apply filter to video by default
+          filter: filterStr,
         })
         .attr(attr);
-
-      canvasElm = new Html("canvas").appendTo(wrapper).styleJs({
-        width: "100%",
-        height: "100%",
-        position: "absolute",
-        objectFit: "fill",
-        display: "none", // Hide canvas by default
-      });
 
       captionsElm = new Html("div")
         .html(
@@ -189,6 +169,7 @@ const pkg = {
                 }
                 setTimeout(() => {
                   hls.loadSource(url);
+                  // hls.attachMedia(videoElm.elm);
                   videoElm.elm.play();
                 }, 1000);
                 break;
@@ -451,71 +432,6 @@ const pkg = {
         });
     }
 
-    async function initWebSR() {
-      if (websr) return false;
-
-      try {
-        const gpu = await WebSR.initWebGPU();
-        if (!gpu) {
-          Root.Libs.Notify.show(
-            "Upscaling not supported",
-            "Your browser or device does not support WebGPU.",
-          );
-          return false;
-        }
-
-        // FIX: Make canvas visible *before* getting its dimensions
-        let filterStr = videoElm.elm.style.filter;
-        canvasElm.styleJs({ display: "block", filter: filterStr });
-
-        // Now that it's visible, set its drawing surface resolution
-        canvasElm.elm.width = canvasElm.elm.clientWidth;
-        canvasElm.elm.height = canvasElm.elm.clientHeight;
-
-        videoElm.styleJs({ filter: "none" });
-
-        websr = new WebSR({
-          source: videoElm.elm,
-          network_name: "anime4k/cnn-2x-s",
-          weights: await (
-            await fetch("/libs/websr/weights/anime4k/cnn-2x-s.json")
-          ).json(),
-          gpu,
-          canvas: canvasElm.elm,
-        });
-
-        await websr.start();
-        videoElm.style({ display: "none" });
-        Root.Libs.Notify.show(
-          "Upscaling Enabled",
-          "Video will now be upscaled.",
-        );
-        return true;
-      } catch (e) {
-        console.error("Failed to initialize WebSR:", e);
-        Root.Libs.Notify.show(
-          "Upscaling Error",
-          "An error occurred while starting the upscaler.",
-        );
-        destroyWebSR();
-        return false;
-      }
-    }
-
-    function destroyWebSR() {
-      if (!websr) return;
-      websr.destroy();
-      websr = null;
-
-      let filterStr = canvasElm.elm.style.filter;
-      videoElm.styleJs({ display: "block", filter: filterStr });
-      canvasElm.styleJs({ display: "none", filter: "none" });
-      Root.Libs.Notify.show(
-        "Upscaling Disabled",
-        "Video is now at original resolution.",
-      );
-    }
-
     function addVideoEventListeners() {
       videoElm.on("loadedmetadata", () => {
         const videoDuration = Math.round(videoElm.elm.duration);
@@ -534,6 +450,7 @@ const pkg = {
         updateProgressValue(
           (videoElm.elm.currentTime / videoElm.elm.duration) * 100,
         );
+        // renderer.currentTime = videoElm.elm.currentTime;
       });
       videoElm.elm.volume = Sfx.getVolume();
       volumeUpdate = (e) => {
@@ -552,7 +469,7 @@ const pkg = {
       });
     }
 
-    async function playVideo(
+    function playVideo(
       path,
       captions = null,
       displayName = null,
@@ -604,6 +521,19 @@ const pkg = {
         }
       });
     }
+
+    // async function loadNewTrack(captionPath) {
+    //   try {
+    //     trackFetchAbort?.abort();
+    //     const signal = (trackFetchAbort = new AbortController()).signal;
+    //     const { regions, cues } = await parseResponse(
+    //       fetch(captionPath, { signal }),
+    //     );
+    //     renderer.changeTrack({ regions, cues });
+    //   } catch (e) {
+    //     console.log(`Aborted loading subtitle track!`, e);
+    //   }
+    // }
 
     function openMenu(overlay, tempUiElems) {
       Sfx.playSfx("deck_ui_into_game_detail.wav");
@@ -662,9 +592,14 @@ const pkg = {
         .html(`Adjust picture settings to your liking.`)
         .appendTo(overlay);
       function previewChanges() {
+        brightness = localStorage.getItem("videoBrightness")
+          ? parseInt(localStorage.getItem("videoBrightness"))
+          : 100;
+        contrast = localStorage.getItem("videoContrast")
+          ? parseInt(localStorage.getItem("videoContrast"))
+          : 100;
         let filterStr = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
-        const targetElm = websr ? canvasElm : videoElm;
-        targetElm.styleJs({ filter: filterStr });
+        videoElm.styleJs({ filter: filterStr });
       }
       function changeBrightness(plus, text) {
         if (plus) {
@@ -820,34 +755,9 @@ const pkg = {
         .on("click", () => {
           changeSaturation(true, saturationInd);
         });
-
-      // --- Upscaling Toggle Button ---
-      new Html("br").appendTo(overlay);
-      let upscaleRow = new Html("div")
-        .class("flex-list")
-        .appendTo(overlay)
-        .styleJs({ width: "100%" });
-
-      let upscaleButton = new Html("button")
-        .text(websr ? "Disable Upscaling" : "Enable Upscaling")
-        .appendTo(upscaleRow)
-        .styleJs({ width: "100%" })
-        .on("click", async () => {
-          if (websr) {
-            destroyWebSR();
-            upscaleButton.text("Enable Upscaling");
-          } else {
-            const success = await initWebSR();
-            if (success) {
-              upscaleButton.text("Disable Upscaling");
-            }
-          }
-        });
-
       tempUiElems.push(row.elm.children);
       tempUiElems.push(row2.elm.children);
       tempUiElems.push(row3.elm.children);
-      tempUiElems.push(upscaleRow.elm.children);
       openMenu(overlay, tempUiElems);
       e.target.classList.remove("over");
     }
@@ -884,6 +794,12 @@ const pkg = {
       new Html("br").appendTo(overlay);
       let tempUiElems = [];
       captions.forEach((caption, index) => {
+        // let fileName = caption.split(/.*[\/|\\]/)[1];
+        // let noExt = fileName.replace(/\.[^/.]+$/, "");
+        // let re = /(?:\.([^.]+))?$/;
+        // let lang = re.exec(noExt)[1]
+        //   ? re.exec(noExt)[1]
+        //   : "No language specified";
         let lang = caption.name || caption.lang || "No language specified";
         console.log(caption);
         let row = new Html("div")
@@ -960,14 +876,7 @@ const pkg = {
   },
 
   end: async function () {
-    if (websr) {
-      websr.destroy();
-      websr = null;
-    }
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
+    hls.destroy();
     Ui.cleanup(Pid);
     Sfx.playSfx("deck_ui_out_of_game_detail.wav");
     Ui.giveUpUi(Pid);
@@ -978,9 +887,6 @@ const pkg = {
     }
     wrapper.cleanup();
     document.removeEventListener("CherryTree.Ui.VolumeChange", volumeUpdate);
-    if (handleResize) {
-      window.removeEventListener("resize", handleResize);
-    }
     document.dispatchEvent(
       new CustomEvent("CherryTree.VideoPlayer.Close", {
         detail: {
