@@ -424,6 +424,10 @@ const pkg = {
           true,
         );
       }),
+      new Html("button").text("View recordings").on("click", async (e) => {
+        Ui.transition("popOut", wrapper, 500, true);
+        await Root.Libs.startPkg("apps:RecordingsViewer", [], true);
+      }),
     );
 
     Ui.init(

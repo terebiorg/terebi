@@ -79,6 +79,9 @@ const pkg = {
 
     async function findCaptions(path) {
       let rootFolder = path.substring(0, path.lastIndexOf("/") + 1);
+      if (rootFolder.trim() == "") {
+        rootFolder = path.substring(0, path.lastIndexOf("\\") + 1);
+      }
       let fileName = path.split(/.*[\/|\\]/)[1];
       let noExt = fileName.replace(/\.[^/.]+$/, "");
       console.log(rootFolder);

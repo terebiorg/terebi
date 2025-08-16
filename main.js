@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const YouTubeCastReceiver = require("yt-cast-receiver");
 const { Client } = require("@xhayper/discord-rpc");
 const nodeDiskInfo = require("node-disk-info");
@@ -17,6 +17,7 @@ const path = require("path");
 const cors = require("cors");
 const http = require("http");
 const fs = require("fs");
+const child_process = require("child_process");
 
 if (require("electron-squirrel-startup")) {
   app.quit();
@@ -215,9 +216,111 @@ client.on("disconnected", () => {
   }, 15_000);
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ffmpeg.setFfmpegPath("resources/bin/ffmpeg.exe");
   ffmpeg.setFfprobePath("resources/bin/ffprobe.exe");
+
+  // --- START: RECORDING LOGIC ---
+  let recordingProcess = null;
+
+  const recordingsBasePath = path.join(app.getPath("userData"), "Recordings");
+  try {
+    if (!fs.existsSync(recordingsBasePath)) {
+      fs.mkdirSync(recordingsBasePath, { recursive: true });
+      console.log(
+        `[RECORDER] Created base recordings directory at: ${recordingsBasePath}`,
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[RECORDER] Failed to create base recordings directory:`,
+      error,
+    );
+  }
+
+  ipcMain.on("start-recording", (event, { streamUrl, channelName }) => {
+    if (recordingProcess) {
+      console.log("[RECORDER] Recording is already in progress.");
+      return;
+    }
+
+    const sanitizedChannelName = channelName.replace(/[<>:"/\\|?*]/g, "_");
+    const channelFolderPath = path.join(
+      recordingsBasePath,
+      sanitizedChannelName,
+    );
+
+    try {
+      if (!fs.existsSync(channelFolderPath)) {
+        fs.mkdirSync(channelFolderPath, { recursive: true });
+      }
+    } catch (error) {
+      console.error(`[RECORDER] Failed to create channel directory:`, error);
+      channelFolderPath = recordingsBasePath;
+    }
+
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(
+      now.getMonth() + 1,
+    ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(
+      now.getHours(),
+    ).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}-${String(
+      now.getSeconds(),
+    ).padStart(2, "0")}`;
+    const fileName = `${sanitizedChannelName}_${timestamp}.mp4`;
+    const savePath = path.join(channelFolderPath, fileName);
+
+    console.log(
+      `[RECORDER] Starting HLS remux from ${streamUrl}, saving to: ${savePath}`,
+    );
+
+    const command = ffmpeg()
+      .input(streamUrl)
+      .inputOptions([
+        "-user_agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+      ])
+      .videoCodec("copy")
+      .audioCodec("copy")
+      .outputOptions([
+        "-bsf:a",
+        "aac_adtstoasc",
+        "-movflags",
+        "frag_keyframe+empty_moov",
+      ])
+      .toFormat("mp4")
+      .output(savePath);
+
+    const args = command._getArguments();
+
+    recordingProcess = child_process.spawn("resources/bin/ffmpeg.exe", args);
+
+    recordingProcess.on("close", (code) => {
+      if (code === 0 || code === 255) {
+        console.log("[RECORDER] Recording finished successfully.");
+      } else {
+        console.error(`[RECORDER] ffmpeg process exited with code ${code}.`);
+      }
+      recordingProcess = null;
+    });
+
+    recordingProcess.on("error", (err) => {
+      console.error("[RECORDER] Failed to start ffmpeg process:", err);
+      recordingProcess = null;
+    });
+
+    recordingProcess.stderr.on("data", (data) => {
+      console.log(`ffmpeg stderr: ${data}`);
+    });
+  });
+
+  ipcMain.on("stop-recording", () => {
+    if (recordingProcess) {
+      console.log("[RECORDER] Stopping recording...");
+      recordingProcess.stdin.write("q");
+    }
+  });
+  // --- END: RECORDING LOGIC ---
 
   let userData = app.getPath("userData");
   console.log("userData", userData);
@@ -308,6 +411,37 @@ app.whenReady().then(() => {
       res.send(buffer);
     });
   });
+
+  // --- START: NEW ENDPOINT FOR LISTING RECORDINGS ---
+  server.get("/list-recordings", async (req, res) => {
+    const recordingsData = {};
+    try {
+      const channelFolders = await fs.promises.readdir(recordingsBasePath);
+      for (const channelFolder of channelFolders) {
+        const channelPath = path.join(recordingsBasePath, channelFolder);
+        const stats = await fs.promises.stat(channelPath);
+        if (stats.isDirectory()) {
+          const files = await fs.promises.readdir(channelPath);
+          const videoFiles = files
+            .filter((file) => file.endsWith(".mp4"))
+            .map((file) => ({
+              name: file,
+              fullPath: path.join(channelPath, file),
+            }));
+
+          if (videoFiles.length > 0) {
+            recordingsData[channelFolder] = videoFiles;
+          }
+        }
+      }
+      res.json(recordingsData);
+    } catch (error) {
+      console.error("[RECORDER] Error listing recordings:", error);
+      res.status(500).json({ error: "Could not list recordings." });
+    }
+  });
+  // --- END: NEW ENDPOINT ---
+
   server.get("/thumbnail", (req, res) => {
     const fPath = req.query.path;
     const fName = path.basename(fPath);

@@ -12,6 +12,18 @@ let wrapper, Ui, Pid, Sfx, volumeUpdate;
 let hls;
 let websr; // Moved to shared scope for access in start() and end()
 let handleResize;
+let isRecording = false;
+let stopRecording;
+let recordButton;
+// Store the current HLS stream URL and channel name for recording
+let currentHlsUrl = null;
+let currentChannelName = null;
+// --- START: MODIFIED ---
+// Variables for the recording status overlay
+let recordingIndicator;
+let recordingTimerInterval;
+let recordingDuration = 0;
+// --- END: MODIFIED ---
 
 let brightness = localStorage.getItem("videoBrightness")
   ? parseInt(localStorage.getItem("videoBrightness"))
@@ -74,8 +86,6 @@ const pkg = {
     let renderer;
     let trackFetchAbort;
 
-    let stream;
-
     function formatTime(timeInSeconds) {
       const result = new Date(timeInSeconds * 1000).toISOString().slice(11, 19);
 
@@ -85,10 +95,23 @@ const pkg = {
       };
     }
 
+    // --- START: MODIFIED ---
+    // Helper function to format seconds into HH:MM:SS for the recording timer
+    function formatRecordingTime(totalSeconds) {
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+
+      return [hours, minutes, seconds]
+        .map((val) => String(val).padStart(2, "0"))
+        .join(":");
+    }
+    // --- END: MODIFIED ---
+
     handleResize = () => {
       if (canvasElm && canvasElm.elm && websr) {
-        canvasElm.elm.width = canvasElm.elm.clientWidth;
-        canvasElm.elm.height = canvasElm.elm.clientHeight;
+        canvasElm.elm.width = canvasElm.elm.clientWidth * 2;
+        canvasElm.elm.height = canvasElm.elm.clientHeight * 2;
       }
     };
     window.addEventListener("resize", handleResize);
@@ -261,6 +284,55 @@ const pkg = {
       return captionOverlay;
     }
 
+    // --- START: MODIFIED ---
+    // Function to create the recording indicator element
+    function createRecordingIndicator() {
+      recordingIndicator = new Html("div")
+        .styleJs({
+          position: "absolute",
+          top: "2rem",
+          left: "2rem",
+          zIndex: "101",
+          display: "none", // Hidden by default
+          flexDirection: "row",
+          alignItems: "center",
+          gap: "10px",
+          backgroundColor: "rgba(0, 0, 0, 0.6)",
+          padding: "0.5rem 1rem",
+          borderRadius: "8px",
+          color: "white",
+          fontSize: "1.2em",
+        })
+        .appendTo(wrapper);
+
+      new Html("div") // The red dot
+        .styleJs({
+          width: "12px",
+          height: "12px",
+          borderRadius: "50%",
+          backgroundColor: "red",
+          animation: "pulse 1.5s infinite",
+        })
+        .appendTo(recordingIndicator);
+
+      new Html("span")
+        .id("recording-timer")
+        .text("00:00:00")
+        .appendTo(recordingIndicator);
+
+      // Add the pulsing animation style to the document
+      const style = document.createElement("style");
+      style.innerHTML = `
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.4; }
+          100% { opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    // --- END: MODIFIED ---
+
     function createVideoInfo(displayName, path) {
       vidInfo = new Html("div").class("flex-column").appendTo(wrapper).styleJs({
         position: "absolute",
@@ -360,6 +432,22 @@ const pkg = {
           justifyContent: "center",
           padding: "0.8rem",
         });
+
+      recordButton = new Html("button")
+        .html(icons["record"] || "REC")
+        .appendTo(bottom)
+        .on("click", toggleRecording)
+        .styleJs({
+          minWidth: "3.25rem",
+          height: "3.25rem",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0.8rem",
+          color: "white", // Default color
+        });
+
       return playPause;
     }
 
@@ -451,6 +539,72 @@ const pkg = {
         });
     }
 
+    // --- START: RECORDING FUNCTIONS (MODIFIED) ---
+    async function startRecording() {
+      if (!currentHlsUrl || !currentChannelName) {
+        Root.Libs.Notify.show(
+          "Error",
+          "Cannot record, stream information is not available.",
+        );
+        return;
+      }
+
+      isRecording = true;
+      recordButton.style({ color: "red" });
+
+      // Show indicator and start timer
+      recordingIndicator.style({ display: "flex" });
+      recordingDuration = 0;
+      const timerElement = recordingIndicator.qs("#recording-timer");
+      timerElement.text(formatRecordingTime(recordingDuration));
+
+      recordingTimerInterval = setInterval(() => {
+        recordingDuration++;
+        timerElement.text(formatRecordingTime(recordingDuration));
+      }, 1000);
+
+      Root.Libs.Notify.show(
+        "Recording Started",
+        `Recording of "${currentChannelName}" has started.`,
+      );
+      Sfx.playSfx("deck_ui_switch_toggle_on.wav");
+
+      window.desktopIntegration.ipc.send("start-recording", {
+        streamUrl: currentHlsUrl,
+        channelName: currentChannelName,
+      });
+    }
+
+    stopRecording = () => {
+      if (!isRecording) return;
+
+      isRecording = false;
+
+      // Hide indicator and stop timer
+      recordingIndicator.style({ display: "none" });
+      clearInterval(recordingTimerInterval);
+      recordingTimerInterval = null;
+      recordingDuration = 0;
+
+      window.desktopIntegration.ipc.send("stop-recording");
+
+      recordButton.style({ color: "white" });
+      Root.Libs.Notify.show(
+        "Recording Finished",
+        `Your recording of "${currentChannelName}" has been saved.`,
+      );
+      Sfx.playSfx("deck_ui_switch_toggle_off.wav");
+    };
+
+    function toggleRecording() {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+    // --- END: RECORDING FUNCTIONS ---
+
     async function initWebSR() {
       if (websr) return false;
 
@@ -464,17 +618,19 @@ const pkg = {
           return false;
         }
 
-        // FIX: Make canvas visible *before* getting its dimensions
         let filterStr = videoElm.elm.style.filter;
         canvasElm.styleJs({ display: "block", filter: filterStr });
 
-        // Now that it's visible, set its drawing surface resolution
-        canvasElm.elm.width = canvasElm.elm.clientWidth;
-        canvasElm.elm.height = canvasElm.elm.clientHeight;
+        canvasElm.elm.width = canvasElm.elm.clientWidth * 2;
+        canvasElm.elm.height = canvasElm.elm.clientHeight * 2;
 
         videoElm.styleJs({ filter: "none" });
 
         websr = new WebSR({
+          resolution: {
+            width: videoElm.elm.videoWidth,
+            height: videoElm.elm.videoHeight,
+          },
           source: videoElm.elm,
           network_name: "anime4k/cnn-2x-s",
           weights: await (
@@ -490,6 +646,10 @@ const pkg = {
           "Upscaling Enabled",
           "Video will now be upscaled.",
         );
+
+        const upscaleButton = document.getElementById("upscale-toggle-button");
+        if (upscaleButton) upscaleButton.textContent = "Disable Upscaling";
+
         return true;
       } catch (e) {
         console.error("Failed to initialize WebSR:", e);
@@ -514,6 +674,9 @@ const pkg = {
         "Upscaling Disabled",
         "Video is now at original resolution.",
       );
+
+      const upscaleButton = document.getElementById("upscale-toggle-button");
+      if (upscaleButton) upscaleButton.textContent = "Enable Upscaling";
     }
 
     function addVideoEventListeners() {
@@ -562,10 +725,14 @@ const pkg = {
       let fileName = path.split(/.*[\/|\\]/)[1];
       let noExt = fileName.replace(/\.[^/.]+$/, "");
 
+      currentHlsUrl = path;
+      currentChannelName = displayName || noExt;
+
       createVideoElement(path, isLocal);
       createTopBar();
       let bottom = createBottomBar();
       createCaptionOverlay();
+      createRecordingIndicator(); // Create the recording overlay element
       createVideoInfo(displayName, path);
       createControlButtons(bottom);
       createTimeElapsed(bottom);
@@ -575,9 +742,6 @@ const pkg = {
       addVideoEventListeners();
 
       Ui.transition("popIn", wrapper);
-      stream = videoElm.elm.mozCaptureStream
-        ? videoElm.elm.mozCaptureStream()
-        : videoElm.elm.captureStream();
       if (autoplay) {
         playPause.html(icons["pause"]);
         videoElm.elm.play();
@@ -829,18 +993,15 @@ const pkg = {
         .styleJs({ width: "100%" });
 
       let upscaleButton = new Html("button")
+        .id("upscale-toggle-button")
         .text(websr ? "Disable Upscaling" : "Enable Upscaling")
         .appendTo(upscaleRow)
         .styleJs({ width: "100%" })
         .on("click", async () => {
           if (websr) {
             destroyWebSR();
-            upscaleButton.text("Enable Upscaling");
           } else {
-            const success = await initWebSR();
-            if (success) {
-              upscaleButton.text("Disable Upscaling");
-            }
+            await initWebSR();
           }
         });
 
@@ -960,6 +1121,9 @@ const pkg = {
   },
 
   end: async function () {
+    if (isRecording) {
+      stopRecording();
+    }
     if (websr) {
       websr.destroy();
       websr = null;
