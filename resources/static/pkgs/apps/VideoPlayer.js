@@ -98,6 +98,10 @@ const pkg = {
             console.log(`[Captions] Found caption ${item.name}`);
             foundCaptions.push(rootFolder + item.name);
           }
+          if (ext == "srt" && item.name.startsWith(noExt)) {
+            console.log(`[Captions] Found caption ${item.name}`);
+            foundCaptions.push(rootFolder + item.name);
+          }
         }
       });
       console.log(foundCaptions.length);
