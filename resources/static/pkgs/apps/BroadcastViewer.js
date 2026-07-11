@@ -2,6 +2,8 @@ import Html from "/libs/html.js";
 import { ParseM3U } from "../../libs/iptv-parser.min.js";
 
 let wrapper, Ui, Pid, Sfx;
+let channelLogos = null;
+let logoKeysSorted = [];
 
 const pkg = {
   name: "Show Viewer",
@@ -148,6 +150,21 @@ const pkg = {
 
       buttons = [];
 
+      if (!channelLogos) {
+        try {
+          const logoRes = await fetch(
+            "https://jaruba.github.io/channel-logos/logo_paths.json",
+          );
+          channelLogos = await logoRes.json();
+          logoKeysSorted = Object.keys(channelLogos).sort(
+            (a, b) => b.length - a.length,
+          );
+        } catch (e) {
+          console.warn("Failed to fetch channel logos", e);
+          channelLogos = {};
+        }
+      }
+
       console.log("Broadcast info:", launchArgs);
 
       let file;
@@ -172,8 +189,34 @@ const pkg = {
       }
 
       console.log("Broadcast list:", data);
-
       console.log(file);
+
+      function getBestLogoMatch(item) {
+        const placeholder = "/assets/img/broadcast_no_poster.svg";
+        const nativeLogo = (item.tvg && item.tvg.logo) || item.logo || null;
+
+        if (!channelLogos || Object.keys(channelLogos).length === 0)
+          return nativeLogo || placeholder;
+
+        let cleanName = (item.name || "")
+          .toLowerCase()
+          .replace(/\[.*?\]|\(.*?\)/g, "") // remove brackets like [UK] or (HD)
+          .replace(/\b(hd|fhd|uhd|4k|1080p|720p|sd|hq)\b/g, "") // remove typical quality markers
+          .replace(/^[a-z]{2,3}\s*[-:|]\s*/, "") // remove country prefixes like "US:" or "UK |"
+          .trim();
+
+        if (channelLogos[cleanName]) {
+          return `https://jaruba.github.io/channel-logos/export/transparent-color${channelLogos[cleanName]}`;
+        }
+
+        for (let key of logoKeysSorted) {
+          if (key.length > 2 && cleanName.includes(key)) {
+            return `https://jaruba.github.io/channel-logos/export/transparent-color${channelLogos[key]}`;
+          }
+        }
+
+        return nativeLogo || placeholder;
+      }
 
       const extRegex = /(?:\.([^.]+))?$/;
       const flexListStyle = { width: "100%" };
@@ -181,6 +224,8 @@ const pkg = {
         aspectRatio: "16 / 9",
         height: "85%",
         borderRadius: "5px",
+        objectFit: "contain",
+        padding: "5px",
       };
       const showCountNameStyle = {
         display: "flex",
@@ -202,15 +247,22 @@ const pkg = {
 
       for (const item of data.items) {
         const ext = extRegex.exec(item.name)[1];
-        console.log(ext);
-        console.log(item);
 
         const row = new Html("div").class("flex-list").styleJs(flexListStyle);
 
-        const showPreview = new Html("img").styleJs(imageStyle).attr({
-          "data-src": "/assets/img/broadcast_no_poster.svg",
-          class: "lazyload",
-        });
+        const showPreview = new Html("img")
+          .styleJs(imageStyle)
+          .attr({
+            "data-src": getBestLogoMatch(item),
+            class: "lazyload",
+          })
+          .on("error", (e) => {
+            e.target.src = "/assets/img/broadcast_no_poster.svg";
+            e.target.setAttribute(
+              "data-src",
+              "/assets/img/broadcast_no_poster.svg",
+            );
+          });
 
         const showCountName = new Html("div").styleJs(showCountNameStyle);
         new Html("p")
