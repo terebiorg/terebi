@@ -1,10 +1,10 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const YouTubeCastReceiver = require("yt-cast-receiver");
 const { Client } = require("@xhayper/discord-rpc");
-const nodeDiskInfo = require("node-disk-info");
 const { Player } = require("yt-cast-receiver");
 const { Worker } = require("worker_threads");
 const { Server } = require("socket.io");
+const si = require("systeminformation");
 const ffmpeg = require("fluent-ffmpeg");
 const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
@@ -510,20 +510,17 @@ app.whenReady().then(async () => {
         );
     });
   });
-  server.get("/drives", (req, res) => {
+  server.get("/drives", async (req, res) => {
     console.log("[FILE] Requesting drives");
-    nodeDiskInfo
-      .getDiskInfo()
-      .then((disks) => {
-        let driveNames = [];
-        disks.forEach((disk) => {
-          driveNames.push(disk.mounted);
-        });
-        res.json(driveNames);
-      })
-      .catch((reason) => {
-        res.status(500).send(reason);
-      });
+    try {
+      const disks = await si.fsSize();
+      // Use a Set to ensure we don't get duplicate mount points
+      const mountPoints = [...new Set(disks.map((d) => d.mount))];
+      res.json(mountPoints);
+    } catch (error) {
+      console.error("[FILE] Failed to get drives:", error.message);
+      res.status(500).send(error.message);
+    }
   });
   server.post("/list", (req, res) => {
     const dir = req.body.dir;
